@@ -14,5 +14,5 @@ A simple DDNS implementation based on Cloudflare DNS service.
 
 # Attention
 * Please make sure your server is consistently connected to the Internet while using this system.
-* If bugs occur, please open an issue and I'm looking forward to a detailed feedback.# Cloudflare-DDNS-System
+* If bugs occur, please open an issue and I'm looking forward to a detailed feedback.
 
