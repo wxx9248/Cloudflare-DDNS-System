@@ -2,11 +2,11 @@
 # -*- coding: utf-8 -*-
 
 """
-         Cloudflare DDNS system v2.0
-                 by wxx9248
+           Cloudflare DDNS system v2.0
+                   by wxx9248
 
-    Licensed by GNU General Public License v3.0
-           Copyright 2020 © wxx9248
+    Licensed under GNU General Public License v3.0
+             Copyright 2020 © wxx9248
 """
 
 __author__      = "wxx9248"
