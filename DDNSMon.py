@@ -25,7 +25,6 @@ import json, base64
 import logging
 import ctypes
 import re
-import pprint
 
 CONFPATH     = "conf.json"
 UNKNOWNEXMSG = "Unknown exception occurred, referring to information below."
@@ -95,28 +94,28 @@ def firstrun(userdata):
         else:
             while True:
                 try:
-                    userdata["E-mail"] = input("Please input the e-mail address of your Cloudflare account: ")
+                    userdata["E-mail"] = input("Please input the e-mail address of your Cloudflare account: ").strip()
                     assert re.search(r"([A-Za-z0-9]+)@([A-Za-z0-9]+)\.([A-Za-z0-9]+)", userdata["E-mail"]) != None
                 except AssertionError:
                     print("Seemingly not an e-mail address, please try again.")
                 else:
                     break
 
-            userdata["Zone-ID"] = input("Please input the Zone-ID of your domain: ")
+            userdata["Zone-ID"] = input("Please input the Zone-ID of your domain: ").strip()
 
             print("Do you wish to use your global API key?")
             print("ATTENTION! GLOBAL API KEY LEAKAGE WILL THREATEN YOUR *WHOLE* CLOUDFLARE ACCOUNT!")
-            choice = input("Your choice (Y/N)? [N]: ")
+            choice = input("Your choice (Y/N)? [N]: ").strip()
             if choice != "" and choice[0] == "Y":
                 userdata["GlobalAPIMode"] = True
                 userdata["Encrypted"] = True
                 print("To ensure the safety of your API key, configuration file encryption will be forced.")
-                userdata["GlobalAPIKey"] = input("Please input your global API key: ")
+                userdata["GlobalAPIKey"] = input("Please input your global API key: ").strip()
             else:
                 userdata["GlobalAPIMode"] = False
-                userdata["DNSAPIToken"] = input("Please input your DNS-dedicated API token: ")
+                userdata["DNSAPIToken"] = input("Please input your DNS-dedicated API token: ").strip()
 
-            choice = input("Do you wish to enable IPv6 support (Y/N)? [N]: ")
+            choice = input("Do you wish to enable IPv6 support (Y/N)? [N]: ").strip()
 
             if choice != "" and choice[0] == "Y":
                 userdata["IPv6"] = True
@@ -124,21 +123,21 @@ def firstrun(userdata):
                 userdata["IPv6"] = False
 
             if userdata["GlobalAPIMode"] == False:
-                choice = input("Do you wish to enable configuration file encryption (Y/N)? [Y]: ")
+                choice = input("Do you wish to enable configuration file encryption (Y/N)? [Y]: ").strip()
                 if choice != "" and choice[0] == "N":
                     userdata["Encrypted"] = False
                 else:
                     userdata["Encrypted"] = True
 
             if userdata["Encrypted"] == True:
-                p = input("Please input your password: ")
+                p = input("Please input your password: ").strip()
 
             clrscr()
             print("Information confirmation:\n")
             for i in ["{}: {}".format(k, userdata[k]) for k in userdata.keys()]:
                 print(i)
             
-            choice = input("All correct (Y/N)? [Y]: ")
+            choice = input("All correct (Y/N)? [Y]: ").strip()
             if choice != "" and choice[0] == "N":
                 clrscr()
             else:
