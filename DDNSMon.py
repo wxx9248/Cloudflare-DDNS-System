@@ -29,6 +29,8 @@ import re
 CONFPATH     = "conf.json"
 UNKNOWNEXMSG = "Unknown exception occurred, referring to information below."
 
+class Restart(Exception):
+    pass
 
 def main():
     # Initialization
@@ -60,29 +62,26 @@ def main():
         logger.error(UNKNOWNEXMSG)
         raise
     
-    while True:
-        logger.info("Parsing configuration file...")
-        try:
-            tmpdata = json.load(conffile)
-        except Exception:
-            conffileunparsable(conffile, userdata)
-        else:
-            break
+    logger.info("Parsing configuration file...")
+    try:
+        tmpdata = json.load(conffile)
+    except Exception:
+        logger.error("Failed to parse configuration file.")
+        conffileunparsable(conffile, userdata)
 
-    while True:
-        logger.info("Checking integrity...")
-        try:
-            assert set(userdata.keys()).issubset(set(tmpdata.keys()))
-            for i in tmpdata:
-                if isinstance(tmpdata[i], str):
-                    assert tmpdata[i]
-                else:
-                    assert tmpdata[i] != None
-        except AssertionError:
-            conffileunparsable(conffile, userdata)
-        else:
-            userdata = tmpdata
-            break
+    logger.info("Checking integrity...")
+    try:
+        assert set(userdata.keys()).issubset(set(tmpdata.keys()))
+        for i in tmpdata:
+            if isinstance(tmpdata[i], str):
+                assert tmpdata[i]
+            else:
+                assert tmpdata[i] != None
+    except AssertionError:
+        logger.error("Integrity verification failed.")
+        conffileunparsable(conffile, userdata)
+    else:
+        userdata = tmpdata
 
     logger.info("Checking if encrypted...")
     if userdata["Encrypted"]:
@@ -99,18 +98,17 @@ def main():
             else:
                 break
         
-        while True:
-            logger.info("Decrypting...")
-            try:
-                userdata["APIKey"] = decrypt(base64.b64decode(bytes(userdata["APIKey"])), p)
-            except Exception:
-                logger.error("Decryption failed.")
-                conffileunparsable(conffile, userdata)
-            else:
-                logger.info("Decryption succeeded.")
-                break
+        logger.info("Decrypting...")
+        try:
+            userdata["APIKey"] = decrypt(base64.b64decode(bytes(userdata["APIKey"])), p)
+        except Exception:
+            logger.error("Decryption process failed.")
+            conffileunparsable(conffile, userdata)
+        else:
+            logger.info("Decryption succeeded.")
+
     else:
-        logger.info("Encryption flag detected, leaving as-is.")
+        logger.info("Encryption flag not detected, leaving as-is.")
 
 
 def clrscr():
@@ -226,7 +224,7 @@ def firstrun(userdata):
                     # Encrypt API key
                     if userdata["Encrypted"] == True:
                         userdata["APIKey"] = str(base64.b64encode(encrypt(userdata["APIKey"], p)))
-
+                        p = ""
                     # Write configure to JSON file
                     try:
                         json.dump(userdata, conffile, indent = 4)
@@ -266,6 +264,8 @@ def conffileunparsable(conffile, userdata):
         raise
     else:
         firstrun(userdata)
+        raise Restart()
+        
 
 
 if __name__ == "__main__":
@@ -273,18 +273,25 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
     logger.debug("Logger initialized.")
 
-    try:
-        main()
-    except Exception as e:
-        print("")
-        logger.error("*********************************")
-        logger.error("An fatal exception has occurred:\n")
-        logger.error(re.search(r"<class '(.+)'>", str(e.__class__)).group(1) + ": " + str(e) + "\n")
-        logger.error("Program exits abnormally.")
-        logger.error("*********************************")
-    except BaseException as e:
-        print("")
-        logger.error("==============================")
-        logger.error("Program was terminated due to:\n")
-        logger.error(re.search(r"<class '(.+)'>", str(e.__class__)).group(1) + ": " + str(e) + "\n")
-        logger.error("==============================")
+    while True:
+        try:
+            main()
+        except Restart:
+            logger.info("Restarting into program entry point...")
+        except Exception as e:
+            print("")
+            logger.error("*********************************")
+            logger.error("An fatal exception has occurred:\n")
+            logger.error(re.search(r"<class '(.+)'>", str(e.__class__)).group(1) + ": " + str(e) + "\n")
+            logger.error("Program exits abnormally.")
+            logger.error("*********************************")
+            break
+        except BaseException as e:
+            print("")
+            logger.error("==============================")
+            logger.error("Program was terminated due to:\n")
+            logger.error(re.search(r"<class '(.+)'>", str(e.__class__)).group(1) + ": " + str(e) + "\n")
+            logger.error("==============================")
+            break
+        else:
+            break
