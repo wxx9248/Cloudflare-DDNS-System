@@ -49,10 +49,10 @@ def main():
     try:
         conffile = open(CONFPATH)
     except FileNotFoundError:
-        # First run
         logger.info("Configure file not found.")
         logger.info("Entering first-run configuration...")
         firstrun(userdata)
+        conffile = open(CONFPATH)
     except OSError:
         logger.error("Can't open configure file \"{}\" for reading, referring to information below.".format(CONFPATH))
         raise
@@ -60,8 +60,8 @@ def main():
         logger.error(UNKNOWNEXMSG)
         raise
     
-    logger.info("Parsing configuration file...")
     while True:
+        logger.info("Parsing configuration file...")
         try:
             tmpdata = json.load(conffile)
         except Exception:
@@ -69,22 +69,48 @@ def main():
         else:
             break
 
-    logger.info("Checking integrity...")
     while True:
+        logger.info("Checking integrity...")
         try:
             assert set(userdata.keys()).issubset(set(tmpdata.keys()))
             for i in tmpdata:
                 if isinstance(tmpdata[i], str):
                     assert tmpdata[i]
-                elif isinstance(tmpdata[i], bool):
+                else:
                     assert tmpdata[i] != None
         except AssertionError:
             conffileunparsable(conffile, userdata)
         else:
             userdata = tmpdata
+            break
 
     logger.info("Checking if encrypted...")
-
+    if userdata["Encrypted"]:
+        logger.info("Encryption flag detected, starting decryption process.")
+        while True:
+            try:
+                p = input("Please input your password: ").strip()
+                assert p.printable()
+            except AssertionError:
+                print("Only printable password allowed, please try again.")
+            except Exception:
+                logger.error(UNKNOWNEXMSG)
+                raise
+            else:
+                break
+        
+        while True:
+            logger.info("Decrypting...")
+            try:
+                userdata["APIKey"] = decrypt(base64.b64decode(bytes(userdata["APIKey"])), p)
+            except Exception:
+                logger.error("Decryption failed.")
+                conffileunparsable(conffile, userdata)
+            else:
+                logger.info("Decryption succeeded.")
+                break
+    else:
+        logger.info("Encryption flag detected, leaving as-is.")
 
 
 def clrscr():
@@ -123,14 +149,21 @@ def firstrun(userdata):
                 while True:
                     try:
                         userdata["E-mail"] = input("Please input the e-mail address of your Cloudflare account: ").strip()
-                        assert re.search(r"([A-Za-z0-9]+)@([A-Za-z0-9]+)\.([A-Za-z0-9]+)", userdata["E-mail"])
+                        assert re.match(r"^([A-Za-z0-9]+)@([A-Za-z0-9]+)\.([A-Za-z0-9]+$)", userdata["E-mail"])
                     except AssertionError:
                         print("Seemingly not an e-mail address, please try again.")
                     else:
                         break
 
-                userdata["Zone-ID"] = input("Please input the Zone-ID of your domain: ").strip()
-
+                while True:
+                    try:
+                        userdata["Zone-ID"] = input("Please input the Zone-ID of your domain: ").strip()
+                        assert re.match(r"^([a-z0-9]+$)", userdata["Zone-ID"])
+                    except AssertionError:
+                        print("Seemingly not an proper Zone-ID, please try again.")
+                    else:
+                        break
+                
                 print("Do you wish to use your global API key?")
                 print("ATTENTION! GLOBAL API KEY LEAKAGE WILL THREATEN YOUR *WHOLE* CLOUDFLARE ACCOUNT!")
                 choice = input("Your choice (Y/N)? [N]: ").strip()
@@ -138,10 +171,24 @@ def firstrun(userdata):
                     userdata["GlobalAPIMode"] = True
                     userdata["Encrypted"] = True
                     print("To ensure the safety of your API key, configuration file encryption will be forced.")
-                    userdata["APIKey"] = input("Please input your global API key: ").strip()
+                    while True:
+                        try:
+                            userdata["APIKey"] = input("Please input your global API key: ").strip()
+                            assert re.match(r"^([a-z0-9]+$)", userdata["APIKey"])
+                        except AssertionError:
+                            print("Seemingly not an proper API key, please try again.")
+                        else:
+                            break
                 else:
                     userdata["GlobalAPIMode"] = False
-                    userdata["APIKey"] = input("Please input your DNS-dedicated API token: ").strip()
+                    while True:
+                        try:
+                            userdata["APIKey"] = input("Please input your DNS-dedicated API token: ").strip()
+                            assert re.match(r"^([A-Za-z0-9\-\.\~\+/_]+)(=*)$", userdata["APIKey"])
+                        except AssertionError:
+                            print("Seemingly not an proper API key, please try again.")
+                        else:
+                            break
 
                 choice = input("Do you wish to enable IPv6 support (Y/N)? [N]: ").strip()
 
@@ -158,7 +205,14 @@ def firstrun(userdata):
                         userdata["Encrypted"] = True
 
                 if userdata["Encrypted"] == True:
-                    p = input("Please input your password: ").strip()
+                    while True:
+                        try:
+                            p = input("Please input your password: ").strip()
+                            assert p.isprintable()
+                        except AssertionError:
+                            print("Only printable password allowed, please try again.")
+                        else:
+                            break
 
                 clrscr()
                 print("Information confirmation:\n")
@@ -186,6 +240,8 @@ def firstrun(userdata):
                 conffile.close()
                 os.remove(CONFPATH)
                 raise
+            else:
+                break
         finally:
             conffile.close()
             
