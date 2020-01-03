@@ -92,76 +92,85 @@ def firstrun(userdata):
             logger.error(UNKNOWNEXMSG)
             raise
         else:
-            while True:
-                try:
-                    userdata["E-mail"] = input("Please input the e-mail address of your Cloudflare account: ").strip()
-                    assert re.search(r"([A-Za-z0-9]+)@([A-Za-z0-9]+)\.([A-Za-z0-9]+)", userdata["E-mail"]) != None
-                except AssertionError:
-                    print("Seemingly not an e-mail address, please try again.")
-                else:
-                    break
-
-            userdata["Zone-ID"] = input("Please input the Zone-ID of your domain: ").strip()
-
-            print("Do you wish to use your global API key?")
-            print("ATTENTION! GLOBAL API KEY LEAKAGE WILL THREATEN YOUR *WHOLE* CLOUDFLARE ACCOUNT!")
-            choice = input("Your choice (Y/N)? [N]: ").strip()
-            if choice != "" and choice[0] == "Y":
-                userdata["GlobalAPIMode"] = True
-                userdata["Encrypted"] = True
-                print("To ensure the safety of your API key, configuration file encryption will be forced.")
-                userdata["GlobalAPIKey"] = input("Please input your global API key: ").strip()
-            else:
-                userdata["GlobalAPIMode"] = False
-                userdata["DNSAPIToken"] = input("Please input your DNS-dedicated API token: ").strip()
-
-            choice = input("Do you wish to enable IPv6 support (Y/N)? [N]: ").strip()
-
-            if choice != "" and choice[0] == "Y":
-                userdata["IPv6"] = True
-            else:
-                userdata["IPv6"] = False
-
-            if userdata["GlobalAPIMode"] == False:
-                choice = input("Do you wish to enable configuration file encryption (Y/N)? [Y]: ").strip()
-                if choice != "" and choice[0] == "N":
-                    userdata["Encrypted"] = False
-                else:
-                    userdata["Encrypted"] = True
-
-            if userdata["Encrypted"] == True:
-                p = input("Please input your password: ").strip()
-
-            clrscr()
-            print("Information confirmation:\n")
-            for i in ["{}: {}".format(k, userdata[k]) for k in userdata.keys()]:
-                print(i)
-            
-            choice = input("All correct (Y/N)? [Y]: ").strip()
-            if choice != "" and choice[0] == "N":
-                clrscr()
-            else:
-                # Encrypt API key
-                if userdata["Encrypted"] == True:
-                    if userdata["GlobalAPIMode"] == True:
-                        userdata["GlobalAPIKey"] = base64.b64encode(encrypt(userdata["GlobalAPIKey"], p))
+            try:
+                while True:
+                    try:
+                        userdata["E-mail"] = input("Please input the e-mail address of your Cloudflare account: ").strip()
+                        assert re.search(r"([A-Za-z0-9]+)@([A-Za-z0-9]+)\.([A-Za-z0-9]+)", userdata["E-mail"]) != None
+                    except AssertionError:
+                        print("Seemingly not an e-mail address, please try again.")
                     else:
-                        userdata["DNSAPIToken"] = base64.b64encode(encrypt(userdata["DNSAPIToken"], p))
+                        break
 
-                # Write configure to JSON file
-                json.dump(userdata, conffile, indent = 4)
+                userdata["Zone-ID"] = input("Please input the Zone-ID of your domain: ").strip()
+
+                print("Do you wish to use your global API key?")
+                print("ATTENTION! GLOBAL API KEY LEAKAGE WILL THREATEN YOUR *WHOLE* CLOUDFLARE ACCOUNT!")
+                choice = input("Your choice (Y/N)? [N]: ").strip()
+                if choice != "" and choice[0] == "Y":
+                    userdata["GlobalAPIMode"] = True
+                    userdata["Encrypted"] = True
+                    print("To ensure the safety of your API key, configuration file encryption will be forced.")
+                    userdata["GlobalAPIKey"] = input("Please input your global API key: ").strip()
+                else:
+                    userdata["GlobalAPIMode"] = False
+                    userdata["DNSAPIToken"] = input("Please input your DNS-dedicated API token: ").strip()
+
+                choice = input("Do you wish to enable IPv6 support (Y/N)? [N]: ").strip()
+
+                if choice != "" and choice[0] == "Y":
+                    userdata["IPv6"] = True
+                else:
+                    userdata["IPv6"] = False
+
+                if userdata["GlobalAPIMode"] == False:
+                    choice = input("Do you wish to enable configuration file encryption (Y/N)? [Y]: ").strip()
+                    if choice != "" and choice[0] == "N":
+                        userdata["Encrypted"] = False
+                    else:
+                        userdata["Encrypted"] = True
+
+                if userdata["Encrypted"] == True:
+                    p = input("Please input your password: ").strip()
+
+                clrscr()
+                print("Information confirmation:\n")
+                for i in ["{}: {}".format(k, userdata[k]) for k in userdata.keys()]:
+                    print(i)
+            
+                choice = input("All correct (Y/N)? [Y]: ").strip()
+                if choice != "" and choice[0] == "N":
+                    clrscr()
+                else:
+                    # Encrypt API key
+                    if userdata["Encrypted"] == True:
+                        if userdata["GlobalAPIMode"] == True:
+                            userdata["GlobalAPIKey"] = str(base64.b64encode(encrypt(userdata["GlobalAPIKey"], p)))
+                        else:
+                            userdata["DNSAPIToken"] = str(base64.b64encode(encrypt(userdata["DNSAPIToken"], p)))
+
+                    # Write configure to JSON file
+                    try:
+                        json.dump(userdata, conffile, indent = 4)
+                    except OSError:
+                        logger.error("Can't generate configuration file, referring to information below.")
+                        raise
+                    except Exception:
+                        logger.error(UNKNOWNEXMSG)
+                        raise
+            except BaseException as e:
                 conffile.close()
-                break
+                os.remove(CONFPATH)
+                raise
         finally:
             conffile.close()
-            os.remove(CONFPATH)
-
+            
 
 def encrypt(string, key):
-    return string
+    return bytes(string, "utf-8")
 
-def decrypt(string, key):
-    return string
+def decrypt(bstring, key):
+    return str(bstring)
 
 if __name__ == "__main__":
     logging.basicConfig(level = logging.INFO, format = "[%(asctime)s] %(name)s: %(funcName)s(): [%(levelname)s] %(message)s")
@@ -172,8 +181,7 @@ if __name__ == "__main__":
         main()
     except Exception as e:
         logger.error("*********************************")
-        logger.error("A fatal error has occurred below:\n")
+        logger.error("A fatal error has occurred:\n")
         logger.error(re.search(r"<class '(.+)'>", str(e.__class__)).group(1) + ": " + str(e) + "\n")
         logger.error("Program exits abnormally.")
         logger.error("*********************************")
-
