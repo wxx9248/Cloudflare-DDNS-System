@@ -156,7 +156,7 @@ def firstrun(userdata):
                 while True:
                     try:
                         userdata["Zone-ID"] = input("Please input the Zone-ID of your domain: ").strip()
-                        assert re.match(r"^([a-z0-9]+$)", userdata["Zone-ID"])
+                        assert re.match(r"^([a-z0-9]+)$", userdata["Zone-ID"])
                     except AssertionError:
                         print("Seemingly not an proper Zone-ID, please try again.")
                     else:
@@ -172,7 +172,7 @@ def firstrun(userdata):
                     while True:
                         try:
                             userdata["APIKey"] = input("Please input your global API key: ").strip()
-                            assert re.match(r"^([a-z0-9]+$)", userdata["APIKey"])
+                            assert re.match(r"^([a-z0-9]+)$", userdata["APIKey"])
                         except AssertionError:
                             print("Seemingly not an proper API key, please try again.")
                         else:
