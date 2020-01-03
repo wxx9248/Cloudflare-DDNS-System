@@ -25,12 +25,29 @@ import json, base64
 import logging
 import ctypes
 import re
+import pprint
 
 CONFPATH     = "conf.json"
 UNKNOWNEXMSG = "Unknown exception occurred, referring to information below."
+PASSWDREGMSG = r"""
+Password must contain 8 - 32 characters, which consist of:
+(1) a upper-case letter,
+(2) a lower-case letter,
+(3) a number,
+(4) a special character (~!@&%#_)
+"""
+
 
 class Restart(Exception):
     pass
+
+regex_Email     = re.compile(r"^([\w\.]+)@(\w+)\.(\w+)$")
+regex_hextoken  = re.compile(r"^([a-f0-9]+)$")
+regex_b64token  = re.compile(r"^([A-Za-z0-9\-\.\~\+/_]+)(=*)$")
+regex_ZoneID    = regex_hextoken
+regex_GAPIKey   = regex_hextoken
+regex_DAPIToken = regex_b64token
+regex_passwd    = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[~!@&%#_])[a-zA-Z0-9~!@&%#_]{8,32}$")
 
 def main():
     # Initialization
@@ -89,18 +106,18 @@ def main():
         while True:
             try:
                 p = input("Please input your password: ").strip()
-                assert p.printable()
+                assert re.match(regex_passwd, p)
             except AssertionError:
-                print("Only printable password allowed, please try again.")
+                print(PASSWDREGMSG)
             except Exception:
                 logger.error(UNKNOWNEXMSG)
                 raise
             else:
                 break
-        
+
         logger.info("Decrypting...")
         try:
-            userdata["APIKey"] = decrypt(base64.b64decode(bytes(userdata["APIKey"])), p)
+            userdata["APIKey"] = decrypt(base64.b64decode(userdata["APIKey"].encode("utf-8")), p)
         except Exception:
             logger.error("Decryption process failed.")
             conffileunparsable(conffile, userdata)
@@ -147,7 +164,7 @@ def firstrun(userdata):
                 while True:
                     try:
                         userdata["E-mail"] = input("Please input the e-mail address of your Cloudflare account: ").strip()
-                        assert re.match(r"^([\w\.]+)@(\w+)\.(\w+)$", userdata["E-mail"])
+                        assert re.match(regex_Email, userdata["E-mail"])
                     except AssertionError:
                         print("Seemingly not an e-mail address, please try again.")
                     else:
@@ -156,7 +173,7 @@ def firstrun(userdata):
                 while True:
                     try:
                         userdata["Zone-ID"] = input("Please input the Zone-ID of your domain: ").strip()
-                        assert re.match(r"^([a-z0-9]+)$", userdata["Zone-ID"])
+                        assert re.match(regex_ZoneID, userdata["Zone-ID"])
                     except AssertionError:
                         print("Seemingly not an proper Zone-ID, please try again.")
                     else:
@@ -172,7 +189,7 @@ def firstrun(userdata):
                     while True:
                         try:
                             userdata["APIKey"] = input("Please input your global API key: ").strip()
-                            assert re.match(r"^([a-z0-9]+)$", userdata["APIKey"])
+                            assert re.match(regex_GAPIKey, userdata["APIKey"])
                         except AssertionError:
                             print("Seemingly not an proper API key, please try again.")
                         else:
@@ -182,7 +199,7 @@ def firstrun(userdata):
                     while True:
                         try:
                             userdata["APIKey"] = input("Please input your DNS-dedicated API token: ").strip()
-                            assert re.match(r"^([A-Za-z0-9\-\.\~\+/_]+)(=*)$", userdata["APIKey"])
+                            assert re.match(regex_DAPIToken, userdata["APIKey"])
                         except AssertionError:
                             print("Seemingly not an proper API key, please try again.")
                         else:
@@ -206,9 +223,9 @@ def firstrun(userdata):
                     while True:
                         try:
                             p = input("Please input your password: ").strip()
-                            assert p.isprintable()
+                            assert re.match(regex_passwd, p)
                         except AssertionError:
-                            print("Only printable password allowed, please try again.")
+                            print(PASSWDREGMSG)
                         else:
                             break
 
@@ -223,7 +240,7 @@ def firstrun(userdata):
                 else:
                     # Encrypt API key
                     if userdata["Encrypted"] == True:
-                        userdata["APIKey"] = str(base64.b64encode(encrypt(userdata["APIKey"], p)))
+                        userdata["APIKey"] = base64.b64encode(encrypt(userdata["APIKey"], p)).decode("utf-8")
                         p = ""
                     # Write configure to JSON file
                     try:
@@ -245,10 +262,10 @@ def firstrun(userdata):
             
 
 def encrypt(string, key):
-    return bytes(string, "utf-8")
+    return string.encode("utf-8")
 
 def decrypt(bstring, key):
-    return str(bstring)
+    return bstring.decode("utf-8")
 
 def conffileunparsable(conffile, userdata):
     logger = logging.getLogger(__name__)
@@ -267,9 +284,8 @@ def conffileunparsable(conffile, userdata):
         raise Restart()
         
 
-
 if __name__ == "__main__":
-    logging.basicConfig(level = logging.INFO, format = "[%(asctime)s] %(name)s: %(funcName)s(): [%(levelname)s] %(message)s")
+    logging.basicConfig(level = logging.DEBUG, format = "[%(asctime)s] %(name)s: %(funcName)s(): [%(levelname)s] %(message)s")
     logger = logging.getLogger(__name__)
     logger.debug("Logger initialized.")
 
