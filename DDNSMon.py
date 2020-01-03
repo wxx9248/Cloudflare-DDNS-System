@@ -158,7 +158,7 @@ def firstrun(userdata):
                     except Exception:
                         logger.error(UNKNOWNEXMSG)
                         raise
-            except BaseException as e:
+            except BaseException:
                 conffile.close()
                 os.remove(CONFPATH)
                 raise
@@ -180,8 +180,15 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:
+        print("")
         logger.error("*********************************")
-        logger.error("A fatal error has occurred:\n")
+        logger.error("An fatal exception has occurred:\n")
         logger.error(re.search(r"<class '(.+)'>", str(e.__class__)).group(1) + ": " + str(e) + "\n")
         logger.error("Program exits abnormally.")
         logger.error("*********************************")
+    except BaseException as e:
+        print("")
+        logger.error("==============================")
+        logger.error("Program was terminated due to:\n")
+        logger.error(re.search(r"<class '(.+)'>", str(e.__class__)).group(1) + ": " + str(e) + "\n")
+        logger.error("==============================")
