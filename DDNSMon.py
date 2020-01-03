@@ -147,7 +147,7 @@ def firstrun(userdata):
                 while True:
                     try:
                         userdata["E-mail"] = input("Please input the e-mail address of your Cloudflare account: ").strip()
-                        assert re.match(r"^([A-Za-z0-9]+)@([A-Za-z0-9]+)\.([A-Za-z0-9]+$)", userdata["E-mail"])
+                        assert re.match(r"^([\w\.]+)@(\w+)\.(\w+$)", userdata["E-mail"])
                     except AssertionError:
                         print("Seemingly not an e-mail address, please try again.")
                     else:
