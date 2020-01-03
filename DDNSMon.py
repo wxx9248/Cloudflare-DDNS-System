@@ -36,8 +36,7 @@ def main():
         "E-mail":                 "",
         "Zone-ID":                "",
         "GlobalAPIMode":          False,
-        "DNSAPIToken":            "",
-        "GlobalAPIKey":           "",
+        "APIKey":                 "",
         "IPv6":                   False,
         "Encrypted":              False
     }
@@ -54,12 +53,38 @@ def main():
         logger.info("Configure file not found.")
         logger.info("Entering first-run configuration...")
         firstrun(userdata)
-    except OSError as e:
-        logger.error("Can't open configure file \"{}\" for reading".format(CONFPATH))
+    except OSError:
+        logger.error("Can't open configure file \"{}\" for reading, referring to information below.".format(CONFPATH))
         raise
     except Exception as e:
         logger.error(UNKNOWNEXMSG)
         raise
+    
+    logger.info("Parsing configuration file...")
+    while True:
+        try:
+            tmpdata = json.load(conffile)
+        except Exception:
+            conffileunparsable(conffile, userdata)
+        else:
+            break
+
+    logger.info("Checking integrity...")
+    while True:
+        try:
+            assert set(userdata.keys()).issubset(set(tmpdata.keys()))
+            for i in tmpdata:
+                if isinstance(tmpdata[i], str):
+                    assert tmpdata[i]
+                elif isinstance(tmpdata[i], bool):
+                    assert tmpdata[i] != None
+        except AssertionError:
+            conffileunparsable(conffile, userdata)
+        else:
+            userdata = tmpdata
+
+    logger.info("Checking if encrypted...")
+
 
 
 def clrscr():
@@ -71,7 +96,9 @@ def clrscr():
         dll = ctypes.CDLL(dllname)
         logger.debug("DLL attached.")
     except OSError as e:
-        logger.error("Can't load " + dllname)
+        logger.warn("Can't load " + dllname)
+        logger.warn("Invoking command line...")
+        os.system("cls")
     except Exception:
         logger.error(UNKNOWNEXMSG)
         raise
@@ -86,7 +113,7 @@ def firstrun(userdata):
         try:
             conffile = open(CONFPATH, "w")
         except OSError as e:
-            logger.error("Can't open configure file \"{}\" for writing".format(CONFPATH))
+            logger.error("Can't open configure file \"{}\" for writing, referring to information below.".format(CONFPATH))
             raise
         except Exception:
             logger.error(UNKNOWNEXMSG)
@@ -96,7 +123,7 @@ def firstrun(userdata):
                 while True:
                     try:
                         userdata["E-mail"] = input("Please input the e-mail address of your Cloudflare account: ").strip()
-                        assert re.search(r"([A-Za-z0-9]+)@([A-Za-z0-9]+)\.([A-Za-z0-9]+)", userdata["E-mail"]) != None
+                        assert re.search(r"([A-Za-z0-9]+)@([A-Za-z0-9]+)\.([A-Za-z0-9]+)", userdata["E-mail"])
                     except AssertionError:
                         print("Seemingly not an e-mail address, please try again.")
                     else:
@@ -111,10 +138,10 @@ def firstrun(userdata):
                     userdata["GlobalAPIMode"] = True
                     userdata["Encrypted"] = True
                     print("To ensure the safety of your API key, configuration file encryption will be forced.")
-                    userdata["GlobalAPIKey"] = input("Please input your global API key: ").strip()
+                    userdata["APIKey"] = input("Please input your global API key: ").strip()
                 else:
                     userdata["GlobalAPIMode"] = False
-                    userdata["DNSAPIToken"] = input("Please input your DNS-dedicated API token: ").strip()
+                    userdata["APIKey"] = input("Please input your DNS-dedicated API token: ").strip()
 
                 choice = input("Do you wish to enable IPv6 support (Y/N)? [N]: ").strip()
 
@@ -144,10 +171,7 @@ def firstrun(userdata):
                 else:
                     # Encrypt API key
                     if userdata["Encrypted"] == True:
-                        if userdata["GlobalAPIMode"] == True:
-                            userdata["GlobalAPIKey"] = str(base64.b64encode(encrypt(userdata["GlobalAPIKey"], p)))
-                        else:
-                            userdata["DNSAPIToken"] = str(base64.b64encode(encrypt(userdata["DNSAPIToken"], p)))
+                        userdata["APIKey"] = str(base64.b64encode(encrypt(userdata["APIKey"], p)))
 
                     # Write configure to JSON file
                     try:
@@ -171,6 +195,22 @@ def encrypt(string, key):
 
 def decrypt(bstring, key):
     return str(bstring)
+
+def conffileunparsable(conffile, userdata):
+    logger = logging.getLogger(__name__)
+    logger.debug("Logger initialized.")
+
+    logger.info("Closing file...")
+    conffile.close()
+    logger.error("Can't parse configuration file, asking for reconfiguration.")
+    print("The configuration file seems corrupted or unparsable.")
+    choice = input("Do you wish to re-setup the program (Y/N)? [Y]: ").strip()
+    if choice != "" and choice[0] == "N":
+        print("You denied reconfiguration.")
+        raise
+    else:
+        firstrun(userdata)
+
 
 if __name__ == "__main__":
     logging.basicConfig(level = logging.INFO, format = "[%(asctime)s] %(name)s: %(funcName)s(): [%(levelname)s] %(message)s")
