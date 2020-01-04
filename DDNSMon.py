@@ -21,14 +21,13 @@ __email__       = "wxx9248@qq.com"
 __status__      = "Development"
 
 import os, sys
-import json, base64
+import json, base64, re
 import logging
 import ctypes
-import re
-import pprint
+import getpass
 
-CONFPATH     = "conf.json"
-UNKNOWNEXMSG = "Unknown exception occurred, referring to information below."
+CONFPATH     = r"conf.json"
+UNKNOWNEXMSG = r"Unknown exception occurred, referring to information below."
 PASSWDREGMSG = r"""
 Password must contain 8 - 32 characters, which consist of:
 (1) a upper-case letter,
@@ -36,7 +35,6 @@ Password must contain 8 - 32 characters, which consist of:
 (3) a number,
 (4) a special character (~!@&%#_)
 """
-
 
 class Restart(Exception):
     pass
@@ -75,7 +73,7 @@ def main():
     except OSError:
         logger.error("Can't open configure file \"{}\" for reading, referring to information below.".format(CONFPATH))
         raise
-    except Exception as e:
+    except Exception:
         logger.error(UNKNOWNEXMSG)
         raise
     
@@ -105,7 +103,7 @@ def main():
         logger.info("Encryption flag detected, starting decryption process.")
         while True:
             try:
-                p = input("Please input your password: ").strip()
+                p = getpass.getpass("Please input your password: ").strip()
                 assert re.match(regex_passwd, p)
             except AssertionError:
                 print(PASSWDREGMSG)
@@ -136,7 +134,7 @@ def clrscr():
     try:
         dll = ctypes.CDLL(dllname)
         logger.debug("DLL attached.")
-    except OSError as e:
+    except OSError:
         logger.warn("Can't load " + dllname)
         logger.warn("Invoking command line...")
         os.system("cls")
@@ -153,7 +151,7 @@ def firstrun(userdata):
     while True:
         try:
             conffile = open(CONFPATH, "w")
-        except OSError as e:
+        except OSError:
             logger.error("Can't open configure file \"{}\" for writing, referring to information below.".format(CONFPATH))
             raise
         except Exception:
