@@ -6,7 +6,8 @@ A simple DDNS implementation based on Cloudflare DNS service.
 * Have **Python 3.7.6** or newer version installed in your system.
 
 # Instructions
-* Make before use
+* Make
+* Make sure module "PyCryptodome" is installed on your system
 * Run the script with a win32 interpreter
 
 ## First-run

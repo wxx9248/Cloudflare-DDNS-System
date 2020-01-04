@@ -21,10 +21,19 @@ __email__       = r"wxx9248@qq.com"
 __status__      = r"Development"
 
 import os, sys
-import json, base64, re
+import json, base64, re, hashlib
 import logging
 import ctypes
 import getpass
+
+try:
+    from Crypto.Cipher import AES
+except ModuleNotFoundError:
+    print("The system depends on module \"PyCryptodome\".")
+    print("Please install the module by executing \"pip install pycryptodome\".")
+    print("Program will exit.")
+    sys.exit(-1)
+
 
 CONFPATH     = r"conf.json"
 UNKNOWNEXMSG = r"Unknown exception occurred, referring to information below."
@@ -55,7 +64,9 @@ def main():
         "GlobalAPIMode":          False,
         "APIKey":                 "",
         "IPv6":                   False,
-        "Encrypted":              False
+        "Encrypted":              False,
+        "EncryptTag":             "undefined",
+        "OneTimeVal":             "undefined"
     }
     logger = logging.getLogger(__name__)
 
@@ -102,26 +113,35 @@ def main():
     if userdata["Encrypted"]:
         logger.info("Encryption flag detected, starting decryption process.")
         while True:
+            while True:
+                try:
+                    p = getpass.getpass("Please input your password: ").strip()
+                    assert re.match(regex_passwd, p)
+                except AssertionError:
+                    print(PASSWDREGMSG)
+                except Exception:
+                    logger.error(UNKNOWNEXMSG)
+                    raise
+                else:
+                    break
+
+            logger.info("Decrypting...")
             try:
-                p = getpass.getpass("Please input your password: ").strip()
-                assert re.match(regex_passwd, p)
-            except AssertionError:
-                print(PASSWDREGMSG)
+                userdata["APIKey"] = decrypt(
+                    base64.b64decode(userdata["APIKey"].encode("utf-8")),
+                    p,
+                    base64.b64decode(userdata["EncryptTag"].encode("utf-8")),
+                    base64.b64decode(userdata["OneTimeVal"].encode("utf-8"))
+                    )
+            except ValueError as e:
+                print(e)
+                logger.error("Incorrect password provided.")
             except Exception:
                 logger.error(UNKNOWNEXMSG)
                 raise
             else:
+                logger.info("Decryption succeeded.")
                 break
-
-        logger.info("Decrypting...")
-        try:
-            userdata["APIKey"] = decrypt(base64.b64decode(userdata["APIKey"].encode("utf-8")), p)
-        except Exception:
-            logger.error("Decryption process failed.")
-            conffileunparsable(conffile, userdata)
-        else:
-            logger.info("Decryption succeeded.")
-
     else:
         logger.info("Encryption flag not detected, leaving as-is.")
 
@@ -234,11 +254,15 @@ def firstrun(userdata):
             
                 choice = input("All correct (Y/N)? [Y]: ").strip()
                 if choice != "" and choice[0] == "N":
-                    clrscr()
+                    raise Restart()
                 else:
+                    clrscr()
                     # Encrypt API key
                     if userdata["Encrypted"] == True:
-                        userdata["APIKey"] = base64.b64encode(encrypt(userdata["APIKey"], p)).decode("utf-8")
+                        bcipher, btag, bnonce = encrypt(userdata["APIKey"], p)
+                        userdata["APIKey"] = base64.b64encode(bcipher).decode("utf-8")
+                        userdata["EncryptTag"] = base64.b64encode(btag).decode("utf-8")
+                        userdata["OneTimeVal"] = base64.b64encode(bnonce).decode("utf-8")
                         p = ""
                     # Write configure to JSON file
                     try:
@@ -259,11 +283,21 @@ def firstrun(userdata):
             conffile.close()
             
 
-def encrypt(string, key):
-    return string.encode("utf-8")
+def encrypt(string, passwd):
+    key = hashlib.shake_256(passwd.encode("utf-8")).hexdigest(8)    # 16-byte key
+    crypto = AES.new(key.encode("utf-8"), AES.MODE_EAX)
+    bnonce = crypto.nonce
+    bcipher, btag = crypto.encrypt_and_digest(string.encode("utf-8"))
 
-def decrypt(bstring, key):
-    return bstring.decode("utf-8")
+    return bcipher, btag, bnonce
+
+def decrypt(bcipher, passwd, btag, bnonce):
+    key = hashlib.shake_256(passwd.encode("utf-8")).hexdigest(8)
+    crypto = AES.new(key.encode("utf-8"), AES.MODE_EAX, nonce = bnonce)
+    string = crypto.decrypt(bcipher).decode("utf-8")
+    crypto.verify(btag)
+
+    return string
 
 def conffileunparsable(conffile, userdata):
     logger = logging.getLogger(__name__)
