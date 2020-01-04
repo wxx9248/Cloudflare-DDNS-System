@@ -2,12 +2,12 @@
 A simple DDNS implementation based on Cloudflare DNS service.
 
 # System Requirements
-* The program is designed for **Windows** currently. (There **may** be Linux compatible version in the future)
+* The program is designed for **Windows** currently.
 * Have **Python 3.7.6** or newer version installed in your system.
 
 # Instructions
 * Make before use
-* Run the script with the interpreter
+* Run the script with a win32 interpreter
 
 ## First-run
 * The program asks for your **E-mail** address and the **Zone ID** of your domain

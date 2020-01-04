@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-"""
+r"""
 ------------------------------------------------------
             Cloudflare DDNS system v2.0
                     by wxx9248
@@ -11,14 +11,14 @@
 ------------------------------------------------------
 """
 
-__author__      = "wxx9248"
-__copyright__   = "Copyright 2020 © wxx9248"
-__license__     = "GPL v3"
-__version__     = "v2.0"
+__author__      = r"wxx9248"
+__copyright__   = r"Copyright 2020 © wxx9248"
+__license__     = r"GPL v3"
+__version__     = r"v2.0"
 __maintainer__  = [__author__]
 __credits__     = [__author__]
-__email__       = "wxx9248@qq.com"
-__status__      = "Development"
+__email__       = r"wxx9248@qq.com"
+__status__      = r"Development"
 
 import os, sys
 import json, base64, re
