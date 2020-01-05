@@ -49,7 +49,7 @@ class Restart(Exception):
     pass
 
 regex_Email     = re.compile(r"^([\w\.]+)@(\w+)\.(\w+)$")
-regex_hextoken  = re.compile(r"^([a-f0-9]+)$")
+regex_hextoken  = re.compile(r"^([a-f0-9]{32})$")
 regex_b64token  = re.compile(r"^([A-Za-z0-9\-\.\~\+/_]+)(=*)$")
 regex_ZoneID    = regex_hextoken
 regex_GAPIKey   = regex_hextoken
@@ -133,8 +133,7 @@ def main():
                     base64.b64decode(userdata["EncryptTag"].encode("utf-8")),
                     base64.b64decode(userdata["OneTimeVal"].encode("utf-8"))
                     )
-            except ValueError as e:
-                print(e)
+            except ValueError:
                 logger.error("Incorrect password provided.")
             except Exception:
                 logger.error(UNKNOWNEXMSG)
@@ -314,7 +313,16 @@ def conffileunparsable(conffile, userdata):
     else:
         firstrun(userdata)
         raise Restart()
-        
+       
+def subDNSToken(userdata):
+    logger = logging.getLogger(__name__)
+    logger.debug("Logger initialized.")
+
+
+def subGlobalAPI(userdata):
+    logger = logging.getLogger(__name__)
+    logger.debug("Logger initialized.")
+
 
 if __name__ == "__main__":
     logging.basicConfig(level = logging.DEBUG, format = "[%(asctime)s] %(name)s: %(funcName)s(): [%(levelname)s] %(message)s")
