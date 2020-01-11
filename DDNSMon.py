@@ -25,10 +25,11 @@ import json, base64, re, hashlib
 import logging
 import ctypes
 import getpass
+import urllib
 
 try:
     from Crypto.Cipher import AES
-except ModuleNotFoundError:
+except ImportError:
     print("The system depends on module \"PyCryptodome\".")
     print("Please install the module by executing \"pip install pycryptodome\".")
     print("Program will exit.")
@@ -45,8 +46,27 @@ Password must contain 8 - 32 characters, which consist of:
 (4) a special character (~!@&%#_)
 """
 
+API_ROOT    = r"https://api.cloudflare.com/client/v4"
+
+
 class Restart(Exception):
     pass
+
+class ClientError(urllib.error.HTTPError):
+    pass
+
+class BadRequestError(ClientError):
+    pass
+
+class NotFoundError(ClientError):
+    pass
+
+class ForbiddenError(ClientError):
+    pass
+
+class ServerError(urllib.error.HTTPError):
+    pass
+
 
 regex_Email     = re.compile(r"^([\w\.]+)@(\w+)\.(\w+)$")
 regex_hextoken  = re.compile(r"^([a-f0-9]{32})$")
@@ -145,6 +165,7 @@ def main():
         logger.info("Encryption flag not detected, leaving as-is.")
 
 
+
 def clrscr():
     dllname = "clrscr.dll"
     logger = logging.getLogger(__name__)
@@ -163,7 +184,7 @@ def clrscr():
     else:
         dll.clrscr()
 
-def firstrun(userdata):
+def firstrun(userdata:dict):
     logger = logging.getLogger(__name__)
     logger.debug("Logger initialized.")
 
@@ -255,6 +276,8 @@ def firstrun(userdata):
                 if choice != "" and choice[0] == "N":
                     raise Restart()
                 else:
+                    # TODO: Connect to Cloudflare server to verify the information user provided.
+
                     clrscr()
                     # Encrypt API key
                     if userdata["Encrypted"] == True:
@@ -282,7 +305,7 @@ def firstrun(userdata):
             conffile.close()
             
 
-def encrypt(string, passwd):
+def encrypt(string:str, passwd:str):
     key = hashlib.shake_256(passwd.encode("utf-8")).hexdigest(8)    # 16-byte key
     crypto = AES.new(key.encode("utf-8"), AES.MODE_EAX)
     bnonce = crypto.nonce
@@ -290,7 +313,7 @@ def encrypt(string, passwd):
 
     return bcipher, btag, bnonce
 
-def decrypt(bcipher, passwd, btag, bnonce):
+def decrypt(bcipher:bytes, passwd:str, btag:bytes, bnonce:bytes):
     key = hashlib.shake_256(passwd.encode("utf-8")).hexdigest(8)
     crypto = AES.new(key.encode("utf-8"), AES.MODE_EAX, nonce = bnonce)
     string = crypto.decrypt(bcipher).decode("utf-8")
@@ -298,7 +321,7 @@ def decrypt(bcipher, passwd, btag, bnonce):
 
     return string
 
-def conffileunparsable(conffile, userdata):
+def conffileunparsable(conffile:_io.TextIOWrapper, userdata:dict):
     logger = logging.getLogger(__name__)
     logger.debug("Logger initialized.")
 
@@ -314,15 +337,35 @@ def conffileunparsable(conffile, userdata):
         firstrun(userdata)
         raise Restart()
        
-def subDNSToken(userdata):
+def APItest(userdata:dict):
     logger = logging.getLogger(__name__)
     logger.debug("Logger initialized.")
 
+    testAPIaddr = API_ROOT + "/zones/" + userdata["Zone-ID"]
+    headers = { "Content-Type: application/json" }
 
-def subGlobalAPI(userdata):
-    logger = logging.getLogger(__name__)
-    logger.debug("Logger initialized.")
+    if userdata["GlobalAPIMode"]:
+        logger.debug("Global API mode enabled.")
+        headers.add("X-Auth-Email: " + userdata["E-mail"])
+        headers.add("X-Auth-Key: " + userdata["APIKey"])
+    else:
+        headers.add("Authorization: Bearer " + userdata["APIKey"])
 
+    # HTTP/GET request
+    try:
+        logger.info("Sending HTTPS request to Cloudflare...")
+        raise Exception("TODO: Send GET request and process the JSON data.")
+    except ConnectionError:
+        logger.error("HTTPS request failed. Please check Internet connection.")
+        raise
+    except urllib.error.HTTPError:
+        logger.error("HTTP error")
+        raise Exception("TODO: Judge from the HTTP state code and throw a proper exception.")
+        raise
+    except Exception:
+        logger.error("Unknown error occurred.")
+        raise
+    
 
 if __name__ == "__main__":
     logging.basicConfig(level = logging.DEBUG, format = "[%(asctime)s] %(name)s: %(funcName)s(): [%(levelname)s] %(message)s")
