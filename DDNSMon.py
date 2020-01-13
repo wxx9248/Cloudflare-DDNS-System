@@ -26,6 +26,8 @@ import logging
 import ctypes
 import getpass
 import urllib
+import urllib.error
+import urllib.request
 
 try:
     from Crypto.Cipher import AES
@@ -36,9 +38,9 @@ except ImportError:
     sys.exit(-1)
 
 
-CONFPATH     = r"conf.json"
-UNKNOWNEXMSG = r"Unknown exception occurred, referring to information below."
-PASSWDREGMSG = r"""
+CONFPATH        = r"conf.json"
+UNKNOWNEXMSG    = r"Unknown exception occurred, referring to information below."
+PASSWDREGMSG    = r"""
 Password must contain 8 - 32 characters, which consist of:
 (1) a upper-case letter,
 (2) a lower-case letter,
@@ -46,8 +48,9 @@ Password must contain 8 - 32 characters, which consist of:
 (4) a special character (~!@&%#_)
 """
 
-API_ROOT    = r"https://api.cloudflare.com/client/v4"
+API_ROOT        = r"https://api.cloudflare.com/client/v4"
 
+PASSWDATT_UPB   = 10
 
 class Restart(Exception):
     pass
@@ -79,9 +82,9 @@ regex_passwd    = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[~!@&%#_])
 def main():
     # Initialization
     userdata = {
-        "E-mail":                 "",
         "Zone-ID":                "",
         "GlobalAPIMode":          False,
+        "E-mail":                 "undefined",
         "APIKey":                 "",
         "IPv6":                   False,
         "Encrypted":              False,
@@ -97,8 +100,8 @@ def main():
     try:
         conffile = open(CONFPATH)
     except FileNotFoundError:
-        logger.info("Configure file not found.")
-        logger.info("Entering first-run configuration...")
+        logger.warn("Configure file not found.")
+        logger.debug("Entering first-run configuration...")
         firstrun(userdata)
         conffile = open(CONFPATH)
     except OSError:
@@ -117,12 +120,35 @@ def main():
 
     logger.info("Checking integrity...")
     try:
+        logger.debug("Stage 1: Check if empty or invalid.")
         assert set(userdata.keys()).issubset(set(tmpdata.keys()))
         for i in tmpdata:
             if isinstance(tmpdata[i], str):
                 assert tmpdata[i]
             else:
                 assert tmpdata[i] != None
+
+        logger.debug("Stage 2: Regex-matching check.")
+        
+        assert re.match(regex_ZoneID, tmpdata["Zone-ID"])
+        logger.debug("Zone-ID: pass")
+
+        if tmpdata["GlobalAPIMode"]:
+            assert tmpdata["Encrypted"]
+            logger.debug("Encrypted: pass")
+            assert re.match(regex_Email, userdata["E-mail"])
+            logger.debug("E-mail: pass")
+
+        if tmpdata["Encrypted"] or not tmpdata["GlobalAPIMode"]:
+            assert re.match(regex_b64token, userdata["APIKey"])
+            logger.debug("APIKey 1st check: pass")
+
+        if tmpdata["Encrypted"]:
+            assert re.match(regex_b64token, userdata["EncryptTag"])
+            logger.debug("EncryptTag: pass")
+            assert re.match(regex_b64token, userdata["OneTimeVal"])
+            logger.debug("OneTimeVal: pass")
+
     except AssertionError:
         logger.error("Integrity verification failed.")
         conffileunparsable(conffile, userdata)
@@ -132,6 +158,8 @@ def main():
     logger.info("Checking if encrypted...")
     if userdata["Encrypted"]:
         logger.info("Encryption flag detected, starting decryption process.")
+        attempts = 0
+
         while True:
             while True:
                 try:
@@ -145,6 +173,7 @@ def main():
                 else:
                     break
 
+            attempts += 1
             logger.info("Decrypting...")
             try:
                 userdata["APIKey"] = decrypt(
@@ -153,8 +182,19 @@ def main():
                     base64.b64decode(userdata["EncryptTag"].encode("utf-8")),
                     base64.b64decode(userdata["OneTimeVal"].encode("utf-8"))
                     )
+                # Regex-matching check
+                assert re.match(regex_passwd, userdata["APIKey"])
+                logger.debug("APIKey 2nd check: pass")
             except ValueError:
-                logger.error("Incorrect password provided.")
+                if attempts < PASSWDATT_UPB:
+                    logger.error("Attempt " + attempts + " of " + PASSWDATT_UPB + ":")
+                    logger.error("Incorrect password provided, please try again.")
+                else:
+                    logger.error("Please consider configuration file corruption.")
+                    conffileunparsable(conffile, userdata)
+            except AssertionError:
+                logger.error("Password regex doesn't match.")
+                conffileunparsable(conffile, userdata)
             except Exception:
                 logger.error(UNKNOWNEXMSG)
                 raise
@@ -164,7 +204,7 @@ def main():
     else:
         logger.info("Encryption flag not detected, leaving as-is.")
 
-
+    APIreq(userdata, API_ROOT + "/zones/" + userdata["Zone-ID"])
 
 def clrscr():
     dllname = "clrscr.dll"
@@ -199,14 +239,6 @@ def firstrun(userdata:dict):
             raise
         else:
             try:
-                while True:
-                    try:
-                        userdata["E-mail"] = input("Please input the e-mail address of your Cloudflare account: ").strip()
-                        assert re.match(regex_Email, userdata["E-mail"])
-                    except AssertionError:
-                        print("Seemingly not an e-mail address, please try again.")
-                    else:
-                        break
 
                 while True:
                     try:
@@ -224,6 +256,15 @@ def firstrun(userdata:dict):
                     userdata["GlobalAPIMode"] = True
                     userdata["Encrypted"] = True
                     print("To ensure the safety of your API key, configuration file encryption will be forced.")
+                    while True:
+                        try:
+                            userdata["E-mail"] = input("Please input the e-mail address of your Cloudflare account: ").strip()
+                            assert re.match(regex_Email, userdata["E-mail"])
+                        except AssertionError:
+                            print("Seemingly not an e-mail address, please try again.")
+                        else:
+                            break
+
                     while True:
                         try:
                             userdata["APIKey"] = input("Please input your global API key: ").strip()
@@ -276,7 +317,23 @@ def firstrun(userdata:dict):
                 if choice != "" and choice[0] == "N":
                     raise Restart()
                 else:
-                    # TODO: Connect to Cloudflare server to verify the information user provided.
+                    try:
+                        response = APIreq(userdata, API_ROOT + "/zones/" + userdata["Zone-ID"])
+                    except ConnectionError:
+                        logger.warn("Internet currently unavaliable. Cannot verify information correctness.")
+                        logger.warn("Configure file will be generated as-is.")
+                    except BadRequestError:
+                        # TODO: verify the response to determine whether incorrect information provided.
+                        pass
+                    except ForbiddenError:
+                        # TODO: I don't actually know what is this case about...
+                        pass
+                    except NotFoundError:
+                        # TODO: API address might change.
+                        pass
+                    except ServerError:
+                        # TODO: Multiple attempts before raise a real exception.
+                        pass
 
                     clrscr()
                     # Encrypt API key
@@ -321,14 +378,16 @@ def decrypt(bcipher:bytes, passwd:str, btag:bytes, bnonce:bytes):
 
     return string
 
-def conffileunparsable(conffile:_io.TextIOWrapper, userdata:dict):
+def conffileunparsable(conffile, userdata:dict):
     logger = logging.getLogger(__name__)
     logger.debug("Logger initialized.")
 
-    logger.info("Closing file...")
+    logger.debug("Closing file...")
     conffile.close()
+
     logger.error("Can't parse configuration file, asking for reconfiguration.")
     print("The configuration file seems corrupted or unparsable.")
+
     choice = input("Do you wish to re-setup the program (Y/N)? [Y]: ").strip()
     if choice != "" and choice[0] == "N":
         print("You denied reconfiguration.")
@@ -337,35 +396,38 @@ def conffileunparsable(conffile:_io.TextIOWrapper, userdata:dict):
         firstrun(userdata)
         raise Restart()
        
-def APItest(userdata:dict):
+def APIreq(userdata:dict, req:str):
     logger = logging.getLogger(__name__)
     logger.debug("Logger initialized.")
 
-    testAPIaddr = API_ROOT + "/zones/" + userdata["Zone-ID"]
-    headers = { "Content-Type: application/json" }
-
+    headers = {
+        "Content-Type": "application/json" 
+        }
+    
     if userdata["GlobalAPIMode"]:
         logger.debug("Global API mode enabled.")
-        headers.add("X-Auth-Email: " + userdata["E-mail"])
-        headers.add("X-Auth-Key: " + userdata["APIKey"])
+        headers["X-Auth-Email"] = userdata["E-mail"]
+        headers["X-Auth-Key"] = userdata["APIKey"]
     else:
-        headers.add("Authorization: Bearer " + userdata["APIKey"])
+        headers["Authorization"] = "Bearer " + userdata["APIKey"]
 
     # HTTP/GET request
     try:
         logger.info("Sending HTTPS request to Cloudflare...")
-        raise Exception("TODO: Send GET request and process the JSON data.")
+        req = urllib.request.Request(testAPIaddr, None, headers)
+        response = urllib.request.urlopen(req)
     except ConnectionError:
         logger.error("HTTPS request failed. Please check Internet connection.")
         raise
-    except urllib.error.HTTPError:
-        logger.error("HTTP error")
+    except urllib.error.HTTPError as e:
+        logger.error(e)
         raise Exception("TODO: Judge from the HTTP state code and throw a proper exception.")
         raise
     except Exception:
         logger.error("Unknown error occurred.")
         raise
     
+    return response
 
 if __name__ == "__main__":
     logging.basicConfig(level = logging.DEBUG, format = "[%(asctime)s] %(name)s: %(funcName)s(): [%(levelname)s] %(message)s")
