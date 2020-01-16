@@ -13,6 +13,7 @@
 *.exp
 
 # Precompiled Headers
+*.pyc
 *.gch
 *.pch
 
