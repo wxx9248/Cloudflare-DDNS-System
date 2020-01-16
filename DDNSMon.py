@@ -9,6 +9,9 @@ r"""
     Licensed under GNU General Public License v3.0
               Copyright 2020 © wxx9248
 ------------------------------------------------------
+
+Main entry of this program.
+
 """
 
 __author__      = r"wxx9248"
@@ -22,12 +25,17 @@ __status__      = r"Development"
 
 import os, sys
 import json, base64, re, hashlib
-import logging
+import logging, traceback
 import ctypes
 import getpass
-import urllib
-import urllib.error
-import urllib.request
+import urllib, urllib.request
+
+try:
+    import HTTPErrors
+except ImportError:
+    print("Cannot find component \"HTTPErrors.py\".")
+    print("Program will exit.")
+    sys.exit(-1)
 
 try:
     from Crypto.Cipher import AES
@@ -54,22 +62,6 @@ PASSWDATT_UPB   = 10
 
 class Restart(Exception):
     pass
-
-class ClientError(urllib.error.HTTPError):
-    pass
-
-class BadRequestError(ClientError):
-    pass
-
-class NotFoundError(ClientError):
-    pass
-
-class ForbiddenError(ClientError):
-    pass
-
-class ServerError(urllib.error.HTTPError):
-    pass
-
 
 regex_Email     = re.compile(r"^([\w\.]+)@(\w+)\.(\w+)$")
 regex_hextoken  = re.compile(r"^([a-f0-9]{32})$")
@@ -100,7 +92,7 @@ def main():
     try:
         conffile = open(CONFPATH)
     except FileNotFoundError:
-        logger.warn("Configure file not found.")
+        logger.warning("Configure file not found.")
         logger.debug("Entering first-run configuration...")
         firstrun(userdata)
         conffile = open(CONFPATH)
@@ -109,6 +101,7 @@ def main():
         raise
     except Exception:
         logger.error(UNKNOWNEXMSG)
+
         raise
     
     logger.info("Parsing configuration file...")
@@ -134,19 +127,19 @@ def main():
         logger.debug("Zone-ID: pass")
 
         if tmpdata["GlobalAPIMode"]:
-            assert tmpdata["Encrypted"]
+            assert tmpdata["Encrypted"] != None
             logger.debug("Encrypted: pass")
-            assert re.match(regex_Email, userdata["E-mail"])
+            assert re.match(regex_Email, tmpdata["E-mail"])
             logger.debug("E-mail: pass")
 
         if tmpdata["Encrypted"] or not tmpdata["GlobalAPIMode"]:
-            assert re.match(regex_b64token, userdata["APIKey"])
+            assert re.match(regex_DAPIToken, tmpdata["APIKey"])
             logger.debug("APIKey 1st check: pass")
-
+        
         if tmpdata["Encrypted"]:
-            assert re.match(regex_b64token, userdata["EncryptTag"])
+            assert re.match(regex_b64token, tmpdata["EncryptTag"])
             logger.debug("EncryptTag: pass")
-            assert re.match(regex_b64token, userdata["OneTimeVal"])
+            assert re.match(regex_b64token, tmpdata["OneTimeVal"])
             logger.debug("OneTimeVal: pass")
 
     except AssertionError:
@@ -183,17 +176,20 @@ def main():
                     base64.b64decode(userdata["OneTimeVal"].encode("utf-8"))
                     )
                 # Regex-matching check
-                assert re.match(regex_passwd, userdata["APIKey"])
+                if userdata["GlobalAPIMode"]:
+                    assert re.match(regex_GAPIKey, userdata["APIKey"])
+                else:
+                    assert re.match(regex_DAPIToken, userdata["APIKey"])
                 logger.debug("APIKey 2nd check: pass")
             except ValueError:
                 if attempts < PASSWDATT_UPB:
-                    logger.error("Attempt " + attempts + " of " + PASSWDATT_UPB + ":")
+                    logger.error("Attempt {} of {} :".format(attempts, PASSWDATT_UPB))
                     logger.error("Incorrect password provided, please try again.")
                 else:
                     logger.error("Please consider configuration file corruption.")
                     conffileunparsable(conffile, userdata)
             except AssertionError:
-                logger.error("Password regex doesn't match.")
+                logger.error("APIKey 2nd check: failed")
                 conffileunparsable(conffile, userdata)
             except Exception:
                 logger.error(UNKNOWNEXMSG)
@@ -215,8 +211,8 @@ def clrscr():
         dll = ctypes.CDLL(dllname)
         logger.debug("DLL attached.")
     except OSError:
-        logger.warn("Can't load " + dllname)
-        logger.warn("Invoking command line...")
+        logger.warning("Can't load " + dllname)
+        logger.warning("Invoking command line...")
         os.system("cls")
     except Exception:
         logger.error(UNKNOWNEXMSG)
@@ -305,6 +301,7 @@ def firstrun(userdata:dict):
                             assert re.match(regex_passwd, p)
                         except AssertionError:
                             print(PASSWDREGMSG)
+                            
                         else:
                             break
 
@@ -320,20 +317,22 @@ def firstrun(userdata:dict):
                     try:
                         response = APIreq(userdata, API_ROOT + "/zones/" + userdata["Zone-ID"])
                     except ConnectionError:
-                        logger.warn("Internet currently unavaliable. Cannot verify information correctness.")
-                        logger.warn("Configure file will be generated as-is.")
-                    except BadRequestError:
-                        # TODO: verify the response to determine whether incorrect information provided.
+                        logger.warning("Internet currently unavaliable. Cannot verify information correctness.")
+                        logger.warning("Configure file will be generated as-is.")
+                    except (HTTPErrors.BadRequestError, HTTPErrors.UnauthorizedError, HTTPErrors.ForbiddenError):
+                        # TODO: Userdata may be incorrect.
                         pass
-                    except ForbiddenError:
-                        # TODO: I don't actually know what is this case about...
-                        pass
-                    except NotFoundError:
+                    except (HTTPErrors.NotFoundError, HTTPErrors.MethodNotAllowedError, HTTPErrors.NotImplementedError):
                         # TODO: API address might change.
                         pass
-                    except ServerError:
+                    except (HTTPErrors.RequestTimeOutError, HTTPErrors.ServiceUnavailableError, HTTPErrors.GatewayTimeOutError):
                         # TODO: Multiple attempts before raise a real exception.
                         pass
+                    except (HTTPErrors.ServerError):
+                        logger.warning("Unable to connect to Cloudflare server. Cannot verify information correctness.")
+                        logger.warning("Configure file will be generated as-is.")
+                    except Exception:
+                        logger.error(UNKNOWNEXMSG)
 
                     clrscr()
                     # Encrypt API key
@@ -414,15 +413,45 @@ def APIreq(userdata:dict, req:str):
     # HTTP/GET request
     try:
         logger.info("Sending HTTPS request to Cloudflare...")
-        req = urllib.request.Request(testAPIaddr, None, headers)
+        req = urllib.request.Request(req, None, headers)
         response = urllib.request.urlopen(req)
     except ConnectionError:
         logger.error("HTTPS request failed. Please check Internet connection.")
         raise
     except urllib.error.HTTPError as e:
         logger.error(e)
-        raise Exception("TODO: Judge from the HTTP state code and throw a proper exception.")
-        raise
+        if e.code // 100 == 1 or e.code // 100 == 2 or e.code // 100 == 3:
+            pass
+        elif e.code // 100 == 4:
+            if e.code == 400:
+                raise HTTPErrors.BadRequestError(e.url, e.code, e.msg, e.hdrs, e.fp)
+            elif e.code == 401:
+                raise HTTPErrors.UnauthorizedError(e.url, e.code, e.msg, e.hdrs, e.fp)
+            elif e.code == 403:
+                raise HTTPErrors.ForbiddenError(e.url, e.code, e.msg, e.hdrs, e.fp)
+            elif e.code == 404:
+                raise HTTPErrors.NotFoundError(e.url, e.code, e.msg, e.hdrs, e.fp)
+            elif e.code == 405:
+                raise HTTPErrors.MethodNotAllowedError(e.url, e.code, e.msg, e.hdrs, e.fp)
+            elif e.code == 408:
+                raise HTTPErrors.RequestTimeOutError(e.url, e.code, e.msg, e.hdrs, e.fp)
+            else:
+                raise HTTPErrors.ClientError(e.url, e.code, e.msg, e.hdrs, e.fp)
+        elif e.code // 100 == 5:
+            if e.code == 500:
+                raise HTTPErrors.InternalServerError(e.url, e.code, e.msg, e.hdrs, e.fp)
+            elif e.code == 501:
+                raise HTTPErrors.NotImplementedError(e.url, e.code, e.msg, e.hdrs, e.fp)
+            elif e.code == 502:
+                raise HTTPErrors.BadGatewayError(e.url, e.code, e.msg, e.hdrs, e.fp)
+            elif e.code == 503:
+                raise HTTPErrors.ServiceUnavailableError(e.url, e.code, e.msg, e.hdrs, e.fp)
+            elif e.code == 504:
+                raise HTTPErrors.GatewayTimeOutError(e.url, e.code, e.msg, e.hdrs, e.fp)
+            else:
+                raise HTTPErrors.ServerError(e.url, e.code, e.msg, e.hdrs, e.fp)
+        else:
+            raise
     except Exception:
         logger.error("Unknown error occurred.")
         raise
@@ -442,8 +471,11 @@ if __name__ == "__main__":
         except Exception as e:
             print("")
             logger.error("*********************************")
-            logger.error("An fatal exception has occurred:\n")
-            logger.error(re.search(r"<class '(.+)'>", str(e.__class__)).group(1) + ": " + str(e) + "\n")
+            logger.error("An fatal exception has occurred:")
+            for txt in traceback.format_exc().splitlines():
+                logger.error(txt)
+            # logger.error(re.search(r"<class '(.+)'>", str(e.__class__)).group(1) + ": " + str(e) + "\n")
+            logger.error("")
             logger.error("Program exits abnormally.")
             logger.error("*********************************")
             break
