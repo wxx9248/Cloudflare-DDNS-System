@@ -11,8 +11,9 @@ A simple DDNS implementation based on Cloudflare DNS service.
 * Run the script with a win32 interpreter
 
 ## First-run
-* The program asks for your **E-mail** address and the **Zone ID** of your domain
+* The program asks for the **Zone ID** of your domain
 * You may then enter your **DNS dedicated API Token**, or **global API key (NOT SAFE)**
+ * If you insist on using your global API key, your **E-mail** address will be collected.
 * The program provides IPv6 option if IPv6 is available, which you may choose to enable.
 * The program generates a config file, where you may enable encryption.
  * When global API key is provided, the encryption is mandatory.
