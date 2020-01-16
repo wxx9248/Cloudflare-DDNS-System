@@ -13,7 +13,6 @@
 *.exp
 
 # Precompiled Headers
-*.pyc
 *.gch
 *.pch
 
@@ -51,3 +50,6 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+
+# Python precompiled library
+*.pyc
