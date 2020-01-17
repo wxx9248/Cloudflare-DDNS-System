@@ -67,3 +67,20 @@ class ServiceUnavailableError(ServerError):
 class GatewayTimeOutError(ServerError):
     # 504
     pass
+
+
+# HTTP status code -> HTTP error exception class
+
+HTTPErrorMap = {
+    400: BadRequestError,
+    401: UnauthorizedError,
+    403: ForbiddenError,
+    404: NotFoundError,
+    405: MethodNotAllowedError,
+    408: RequestTimeOutError,
+    500: InternalServerError,
+    501: NotImplementedError,
+    502: BadGatewayError,
+    503: ServiceUnavailableError,
+    504: GatewayTimeOutError
+    }

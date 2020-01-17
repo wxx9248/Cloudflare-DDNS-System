@@ -9,9 +9,6 @@ r"""
     Licensed under GNU General Public License v3.0
               Copyright 2020 © wxx9248
 ------------------------------------------------------
-
-Main entry of this program.
-
 """
 
 __author__      = r"wxx9248"
@@ -159,6 +156,7 @@ def main():
                     p = getpass.getpass("Please input your password: ").strip()
                     assert re.match(regex_passwd, p)
                 except AssertionError:
+                    logger.debug("Invalid password provided, printing hint.")
                     print(PASSWDREGMSG)
                 except Exception:
                     logger.error(UNKNOWNEXMSG)
@@ -235,12 +233,12 @@ def firstrun(userdata:dict):
             raise
         else:
             try:
-
                 while True:
                     try:
                         userdata["Zone-ID"] = input("Please input the Zone-ID of your domain: ").strip()
                         assert re.match(regex_ZoneID, userdata["Zone-ID"])
                     except AssertionError:
+                        logger.debug("Invalid Zone-ID provided.")
                         print("Seemingly not an proper Zone-ID, please try again.")
                     else:
                         break
@@ -249,6 +247,7 @@ def firstrun(userdata:dict):
                 print("ATTENTION! GLOBAL API KEY LEAKAGE WILL THREATEN YOUR *WHOLE* CLOUDFLARE ACCOUNT!")
                 choice = input("Your choice (Y/N)? [N]: ").strip()
                 if choice != "" and choice[0] == "Y":
+                    logger.debug("Global API mode activated.")
                     userdata["GlobalAPIMode"] = True
                     userdata["Encrypted"] = True
                     print("To ensure the safety of your API key, configuration file encryption will be forced.")
@@ -257,6 +256,7 @@ def firstrun(userdata:dict):
                             userdata["E-mail"] = input("Please input the e-mail address of your Cloudflare account: ").strip()
                             assert re.match(regex_Email, userdata["E-mail"])
                         except AssertionError:
+                            logger.debug("Invalid e-mail address provided.")
                             print("Seemingly not an e-mail address, please try again.")
                         else:
                             break
@@ -266,6 +266,7 @@ def firstrun(userdata:dict):
                             userdata["APIKey"] = input("Please input your global API key: ").strip()
                             assert re.match(regex_GAPIKey, userdata["APIKey"])
                         except AssertionError:
+                            logger.debug("Invalid API key provided.")
                             print("Seemingly not an proper API key, please try again.")
                         else:
                             break
@@ -276,6 +277,7 @@ def firstrun(userdata:dict):
                             userdata["APIKey"] = input("Please input your DNS-dedicated API token: ").strip()
                             assert re.match(regex_DAPIToken, userdata["APIKey"])
                         except AssertionError:
+                            logger.debug("Invalid API key provided.")
                             print("Seemingly not an proper API key, please try again.")
                         else:
                             break
@@ -283,15 +285,19 @@ def firstrun(userdata:dict):
                 choice = input("Do you wish to enable IPv6 support (Y/N)? [N]: ").strip()
 
                 if choice != "" and choice[0] == "Y":
+                    logger.debug("IPv6 support enabled.")
                     userdata["IPv6"] = True
                 else:
+                    logger.debug("IPv6 support disabled.")
                     userdata["IPv6"] = False
 
                 if userdata["GlobalAPIMode"] == False:
-                    choice = input("Do you wish to enable configuration file encryption (Y/N)? [Y]: ").strip()
+                    choice = input("Do you wish to enable API key encryption (Y/N)? [Y]: ").strip()
                     if choice != "" and choice[0] == "N":
+                        logger.debug("API key encryption disabled.")
                         userdata["Encrypted"] = False
                     else:
+                        logger.debug("API key encryption enabled.")
                         userdata["Encrypted"] = True
 
                 if userdata["Encrypted"] == True:
@@ -300,8 +306,8 @@ def firstrun(userdata:dict):
                             p = input("Please input your password: ").strip()
                             assert re.match(regex_passwd, p)
                         except AssertionError:
+                            logger.debug("Invalid password provided, printing hint.")
                             print(PASSWDREGMSG)
-                            
                         else:
                             break
 
@@ -312,6 +318,7 @@ def firstrun(userdata:dict):
             
                 choice = input("All correct (Y/N)? [Y]: ").strip()
                 if choice != "" and choice[0] == "N":
+                    logger.debug("User denied to proceed, restarting program.")
                     raise Restart()
                 else:
                     try:
@@ -384,11 +391,12 @@ def conffileunparsable(conffile, userdata:dict):
     logger.debug("Closing file...")
     conffile.close()
 
-    logger.error("Can't parse configuration file, asking for reconfiguration.")
+    logger.error("Can't parse configuration file.")
     print("The configuration file seems corrupted or unparsable.")
 
     choice = input("Do you wish to re-setup the program (Y/N)? [Y]: ").strip()
     if choice != "" and choice[0] == "N":
+        logger.debug("User denied to reconfigure.")
         print("You denied reconfiguration.")
         raise
     else:
@@ -415,45 +423,24 @@ def APIreq(userdata:dict, req:str):
         logger.info("Sending HTTPS request to Cloudflare...")
         req = urllib.request.Request(req, None, headers)
         response = urllib.request.urlopen(req)
-    except ConnectionError:
+    except (urllib.error.URLError, ConnectionError):
         logger.error("HTTPS request failed. Please check Internet connection.")
         raise
     except urllib.error.HTTPError as e:
         logger.error(e)
-        if e.code // 100 == 1 or e.code // 100 == 2 or e.code // 100 == 3:
-            pass
-        elif e.code // 100 == 4:
-            if e.code == 400:
-                raise HTTPErrors.BadRequestError(e.url, e.code, e.msg, e.hdrs, e.fp)
-            elif e.code == 401:
-                raise HTTPErrors.UnauthorizedError(e.url, e.code, e.msg, e.hdrs, e.fp)
-            elif e.code == 403:
-                raise HTTPErrors.ForbiddenError(e.url, e.code, e.msg, e.hdrs, e.fp)
-            elif e.code == 404:
-                raise HTTPErrors.NotFoundError(e.url, e.code, e.msg, e.hdrs, e.fp)
-            elif e.code == 405:
-                raise HTTPErrors.MethodNotAllowedError(e.url, e.code, e.msg, e.hdrs, e.fp)
-            elif e.code == 408:
-                raise HTTPErrors.RequestTimeOutError(e.url, e.code, e.msg, e.hdrs, e.fp)
-            else:
+        try:
+            raise HTTPErrors.HTTPErrorMap[e.code](e.url, e.code, e.msg, e.hdrs, e.fp)
+        except KeyError:
+            if e.code // 100 == 1 or e.code // 100 == 2 or e.code // 100 == 3:
+                pass
+            elif e.code // 100 == 4:
                 raise HTTPErrors.ClientError(e.url, e.code, e.msg, e.hdrs, e.fp)
-        elif e.code // 100 == 5:
-            if e.code == 500:
-                raise HTTPErrors.InternalServerError(e.url, e.code, e.msg, e.hdrs, e.fp)
-            elif e.code == 501:
-                raise HTTPErrors.NotImplementedError(e.url, e.code, e.msg, e.hdrs, e.fp)
-            elif e.code == 502:
-                raise HTTPErrors.BadGatewayError(e.url, e.code, e.msg, e.hdrs, e.fp)
-            elif e.code == 503:
-                raise HTTPErrors.ServiceUnavailableError(e.url, e.code, e.msg, e.hdrs, e.fp)
-            elif e.code == 504:
-                raise HTTPErrors.GatewayTimeOutError(e.url, e.code, e.msg, e.hdrs, e.fp)
-            else:
+            elif e.code // 100 == 5:
                 raise HTTPErrors.ServerError(e.url, e.code, e.msg, e.hdrs, e.fp)
-        else:
-            raise
+            else:
+                raise
     except Exception:
-        logger.error("Unknown error occurred.")
+        logger.error(UNKNOWNEXMSG)
         raise
     
     return response
@@ -472,8 +459,8 @@ if __name__ == "__main__":
             print("")
             logger.error("*********************************")
             logger.error("An fatal exception has occurred:")
-            for txt in traceback.format_exc().splitlines():
-                logger.error(txt)
+            for line in traceback.format_exc().splitlines():
+                logger.error(line)
             # logger.error(re.search(r"<class '(.+)'>", str(e.__class__)).group(1) + ": " + str(e) + "\n")
             logger.error("")
             logger.error("Program exits abnormally.")
