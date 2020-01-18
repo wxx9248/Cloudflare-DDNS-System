@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 r"""
@@ -64,6 +64,33 @@ NETFAILATT_UPB  = 3
 class Restart(Exception):
     pass
 
+class ConfFileUnparsable(Exception):
+    def __init__(self, userdata:dict):
+        super().__init__()
+        _userdata = userdata
+
+    def deal(self):
+        logger = logging.getLogger(__name__)
+        logger.debug("Logger initialized.")
+
+        if hasattr(self, "_userdata"):
+            logger.error("Can't parse configuration file.")
+            print("The configuration file seems corrupted or unparsable.")
+
+            choice = input("Do you wish to re-setup the program (Y/N)? [Y]: ").strip().upper()
+            if choice != "" and choice[0] == "N":
+                logger.debug("User denied to reconfigure.")
+                print("You denied reconfiguration.")
+                raise
+            else:
+                firstrun(_userdata)
+                raise Restart()
+        else:
+            # As a class in Python, I feel so unsafe...
+            logger.error("That's ILLEGAL!")
+            raise Exception("RU kiddin' me?")
+
+
 regex_Domain    = re.compile(r"(\w+)\.(\w+)$")
 regex_Email     = re.compile(r"^([\w\.]+)@(\w+)\.(\w+)$")
 regex_hextoken  = re.compile(r"^([a-f0-9]{32})$")
@@ -92,9 +119,16 @@ def main():
     # Start
     clrscr()
     print(sys.modules[__name__].__doc__)
-    
+
     try:
-        conffile = open(CONFPATH)
+        with open(CONFPATH) as conffile:
+            logger.info("Parsing configuration file...")
+            try:
+                tmpdata = json.load(conffile)
+                conffile.close()
+            except Exception:
+                logger.error("Failed to parse configuration file.")
+                raise ConfFileUnparsable(userdata)
     except FileNotFoundError:
         logger.warning("Configure file not found.")
         logger.debug("Entering first-run configuration...")
@@ -103,17 +137,12 @@ def main():
     except OSError:
         logger.error("Can't open configure file \"{}\" for reading, referring to information below.".format(CONFPATH))
         raise
+    except ConfFileUnparsable as e:
+        e.deal()
     except Exception:
         logger.error(UNKNOWNEXMSG)
         raise
-    
-    logger.info("Parsing configuration file...")
-    try:
-        tmpdata = json.load(conffile)
-        conffile.close()
-    except Exception:
-        logger.error("Failed to parse configuration file.")
-        conffileunparsable(conffile, userdata)
+   
 
     logger.info("Checking integrity...")
     try:
@@ -157,7 +186,7 @@ def main():
 
     except AssertionError:
         logger.error("Integrity verification failed.")
-        conffileunparsable(conffile, userdata)
+        ConfFileUnparsable(userdata).deal()
     else:
         userdata = tmpdata
 
@@ -201,10 +230,10 @@ def main():
                     logger.error("Incorrect password provided, please try again.")
                 else:
                     logger.error("Please consider configuration file corruption.")
-                    conffileunparsable(conffile, userdata)
+                    ConfFileUnparsable(userdata).deal()
             except AssertionError:
                 logger.error("APIKey 2nd check: failed")
-                conffileunparsable(conffile, userdata)
+                ConfFileUnparsable(userdata).deal()
             except Exception:
                 logger.error(UNKNOWNEXMSG)
                 raise
@@ -450,25 +479,6 @@ def decrypt(bcipher:bytes, passwd:str, btag:bytes, bnonce:bytes):
 
     return string
 
-def conffileunparsable(conffile, userdata:dict):
-    logger = logging.getLogger(__name__)
-    logger.debug("Logger initialized.")
-
-    logger.debug("Closing file...")
-    conffile.close()
-
-    logger.error("Can't parse configuration file.")
-    print("The configuration file seems corrupted or unparsable.")
-
-    choice = input("Do you wish to re-setup the program (Y/N)? [Y]: ").strip().upper()
-    if choice != "" and choice[0] == "N":
-        logger.debug("User denied to reconfigure.")
-        print("You denied reconfiguration.")
-        raise
-    else:
-        firstrun(userdata)
-        raise Restart()
-       
 def APIreq(req:str, userdata:dict = {}):
     logger = logging.getLogger(__name__)
     logger.debug("Logger initialized.")
