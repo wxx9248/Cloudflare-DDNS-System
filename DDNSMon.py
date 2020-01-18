@@ -56,6 +56,7 @@ Password must contain 8 - 32 characters, which consist of:
 API_ROOT        = r"https://api.cloudflare.com/client/v4"
 
 PASSWDATT_UPB   = 10
+NETFAILATT_UPB  = 3
 
 class Restart(Exception):
     pass
@@ -245,7 +246,7 @@ def firstrun(userdata:dict):
                 
                 print("Do you wish to use your global API key?")
                 print("ATTENTION! GLOBAL API KEY LEAKAGE WILL THREATEN YOUR *WHOLE* CLOUDFLARE ACCOUNT!")
-                choice = input("Your choice (Y/N)? [N]: ").strip()
+                choice = input("Your choice (Y/N)? [N]: ").strip().upper()
                 if choice != "" and choice[0] == "Y":
                     logger.debug("Global API mode activated.")
                     userdata["GlobalAPIMode"] = True
@@ -282,7 +283,7 @@ def firstrun(userdata:dict):
                         else:
                             break
 
-                choice = input("Do you wish to enable IPv6 support (Y/N)? [N]: ").strip()
+                choice = input("Do you wish to enable IPv6 support (Y/N)? [N]: ").strip().upper()
 
                 if choice != "" and choice[0] == "Y":
                     logger.debug("IPv6 support enabled.")
@@ -292,7 +293,7 @@ def firstrun(userdata:dict):
                     userdata["IPv6"] = False
 
                 if userdata["GlobalAPIMode"] == False:
-                    choice = input("Do you wish to enable API key encryption (Y/N)? [Y]: ").strip()
+                    choice = input("Do you wish to enable API key encryption (Y/N)? [Y]: ").strip().upper()
                     if choice != "" and choice[0] == "N":
                         logger.debug("API key encryption disabled.")
                         userdata["Encrypted"] = False
@@ -316,30 +317,54 @@ def firstrun(userdata:dict):
                 for i in ["{}: {}".format(k, userdata[k]) for k in userdata.keys()]:
                     print(i)
             
-                choice = input("All correct (Y/N)? [Y]: ").strip()
+                choice = input("All correct (Y/N)? [Y]: ").strip().upper()
                 if choice != "" and choice[0] == "N":
                     logger.debug("User denied to proceed, restarting program.")
                     raise Restart()
                 else:
-                    try:
-                        response = APIreq(userdata, API_ROOT + "/zones/" + userdata["Zone-ID"])
-                    except ConnectionError:
-                        logger.warning("Internet currently unavaliable. Cannot verify information correctness.")
-                        logger.warning("Configure file will be generated as-is.")
-                    except (HTTPErrors.BadRequestError, HTTPErrors.UnauthorizedError, HTTPErrors.ForbiddenError):
-                        # TODO: Userdata may be incorrect.
-                        pass
-                    except (HTTPErrors.NotFoundError, HTTPErrors.MethodNotAllowedError, HTTPErrors.NotImplementedError):
-                        # TODO: API address might change.
-                        pass
-                    except (HTTPErrors.RequestTimeOutError, HTTPErrors.ServiceUnavailableError, HTTPErrors.GatewayTimeOutError):
-                        # TODO: Multiple attempts before raise a real exception.
-                        pass
-                    except (HTTPErrors.ServerError):
-                        logger.warning("Unable to connect to Cloudflare server. Cannot verify information correctness.")
-                        logger.warning("Configure file will be generated as-is.")
-                    except Exception:
-                        logger.error(UNKNOWNEXMSG)
+                    attempts = 0
+                    while True:
+                        try:
+                            response = APIreq(userdata, API_ROOT + "/zones/" + userdata["Zone-ID"])
+                            break
+
+                        except urllib.error.URLError:
+                            logger.warning("Internet currently unavaliable. Cannot verify information correctness.")
+                            logger.warning("Configure file will be generated as-is.")
+                            break
+
+                        except (HTTPErrors.BadRequestError, HTTPErrors.UnauthorizedError, HTTPErrors.ForbiddenError):
+                            logger.warning("Server API returned exceptional code.")
+                            logger.warning("May be information mismatch, printing message.")
+                            print("Information provided may be incorrect.")
+
+                            choice = input("Try to send request again or re-setup (T/R)? [T]: ").strip().upper()
+                            if choice != "" and choice[0] == "R":
+                                raise Restart()
+
+                        except (HTTPErrors.NotFoundError, HTTPErrors.MethodNotAllowedError, HTTPErrors.NotImplementedError):
+                            logger.error("Invalid server API. Developer")
+                            print("Invalid server API.")
+                            print("Please open an issue at the Github page of this project and attach this log file.")
+                            raise
+
+                        except (HTTPErrors.RequestTimeOutError, HTTPErrors.ServiceUnavailableError, HTTPErrors.GatewayTimeOutError):
+                            attemps += 1
+                            if attemps > NETFAILATT_UPB:
+                                logger.warning("Maximium connection failure times reached. Cannot verify information correctness.")
+                                logger.warning("Configure file will be generated as-is.")
+                                break
+                            else:
+                                logger.warning("Attempt #{}: Request not reached, retry.".format(attemps))
+
+                        except (HTTPErrors.ServerError, HTTPErrors.ClientError):
+                            logger.warning("Unable to connect to Cloudflare server. Cannot verify information correctness.")
+                            logger.warning("Configure file will be generated as-is.")
+                            break
+
+                        except Exception:
+                            logger.error(UNKNOWNEXMSG)
+                            raise
 
                     clrscr()
                     # Encrypt API key
@@ -394,7 +419,7 @@ def conffileunparsable(conffile, userdata:dict):
     logger.error("Can't parse configuration file.")
     print("The configuration file seems corrupted or unparsable.")
 
-    choice = input("Do you wish to re-setup the program (Y/N)? [Y]: ").strip()
+    choice = input("Do you wish to re-setup the program (Y/N)? [Y]: ").strip().upper()
     if choice != "" and choice[0] == "N":
         logger.debug("User denied to reconfigure.")
         print("You denied reconfiguration.")
@@ -423,7 +448,7 @@ def APIreq(userdata:dict, req:str):
         logger.info("Sending HTTPS request to Cloudflare...")
         req = urllib.request.Request(req, None, headers)
         response = urllib.request.urlopen(req)
-    except (urllib.error.URLError, ConnectionError):
+    except urllib.error.URLError:
         logger.error("HTTPS request failed. Please check Internet connection.")
         raise
     except urllib.error.HTTPError as e:
