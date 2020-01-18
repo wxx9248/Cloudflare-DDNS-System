@@ -53,7 +53,9 @@ Password must contain 8 - 32 characters, which consist of:
 (4) a special character (~!@&%#_)
 """
 
-API_ROOT        = r"https://api.cloudflare.com/client/v4"
+CF_API_ROOT        = r"https://api.cloudflare.com/client/v4"
+IP_API_ROOT        = r"" # TODO
+
 
 PASSWDATT_UPB   = 10
 NETFAILATT_UPB  = 3
@@ -61,6 +63,7 @@ NETFAILATT_UPB  = 3
 class Restart(Exception):
     pass
 
+regex_Domain    = re.compile(r"(\w+)\.(\w+)$")
 regex_Email     = re.compile(r"^([\w\.]+)@(\w+)\.(\w+)$")
 regex_hextoken  = re.compile(r"^([a-f0-9]{32})$")
 regex_b64token  = re.compile(r"^([A-Za-z0-9\-\.\~\+/_]+)(=*)$")
@@ -69,10 +72,12 @@ regex_GAPIKey   = regex_hextoken
 regex_DAPIToken = regex_b64token
 regex_passwd    = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[~!@&%#_])[a-zA-Z0-9~!@&%#_]{8,32}$")
 
+
 def main():
     # Initialization
     userdata = {
         "Zone-ID":                "",
+        "Domains":                [],
         "GlobalAPIMode":          False,
         "E-mail":                 "undefined",
         "APIKey":                 "",
@@ -99,7 +104,6 @@ def main():
         raise
     except Exception:
         logger.error(UNKNOWNEXMSG)
-
         raise
     
     logger.info("Parsing configuration file...")
@@ -116,6 +120,11 @@ def main():
         for i in tmpdata:
             if isinstance(tmpdata[i], str):
                 assert tmpdata[i]
+            elif isinstance(tmpdata[i], list):
+                assert tmpdata[i]
+                for item in tmpdata[i]:
+                    assert isinstance(item, str)
+                    assert item
             else:
                 assert tmpdata[i] != None
 
@@ -123,6 +132,10 @@ def main():
         
         assert re.match(regex_ZoneID, tmpdata["Zone-ID"])
         logger.debug("Zone-ID: pass")
+
+        for item in tmpdata["Domain"]:
+            assert re.match(regex_Domain, item)
+        logger.debug("Domains: pass")
 
         if tmpdata["GlobalAPIMode"]:
             assert tmpdata["Encrypted"] != None
@@ -199,7 +212,10 @@ def main():
     else:
         logger.info("Encryption flag not detected, leaving as-is.")
 
-    APIreq(userdata, API_ROOT + "/zones/" + userdata["Zone-ID"])
+    # This is a test request.
+    APIreq(userdata, CF_API_ROOT + "/zones/" + userdata["Zone-ID"])
+
+    # TODO: 
 
 def clrscr():
     dllname = "clrscr.dll"
@@ -244,6 +260,21 @@ def firstrun(userdata:dict):
                     else:
                         break
                 
+                while True:
+                    try:
+                        domain = input("Please input targeted domain name: ").strip().lower()
+                        assert re.match(regex_Domain, domain)
+                        userdata["Domains"].append(domain)
+                    except AssertionError:
+                        logger.debug("Invalid domain name provided.")
+                        print("Seemingly not an proper domain name, please try again.")
+                    else:
+                        choice = input("Do you wish to add another domain name (Y/N)? [N]: ").strip().upper()
+                        if choice != "" and choice[0] == "Y":
+                            pass
+                        else:
+                            break
+
                 print("Do you wish to use your global API key?")
                 print("ATTENTION! GLOBAL API KEY LEAKAGE WILL THREATEN YOUR *WHOLE* CLOUDFLARE ACCOUNT!")
                 choice = input("Your choice (Y/N)? [N]: ").strip().upper()
@@ -314,18 +345,18 @@ def firstrun(userdata:dict):
 
                 clrscr()
                 print("Information confirmation:\n")
-                for i in ["{}: {}".format(k, userdata[k]) for k in userdata.keys()]:
-                    print(i)
-            
+                printconf(userdata)
+
                 choice = input("All correct (Y/N)? [Y]: ").strip().upper()
                 if choice != "" and choice[0] == "N":
+                    # TODO: May consider making this part more humane...
                     logger.debug("User denied to proceed, restarting program.")
                     raise Restart()
                 else:
                     attempts = 0
                     while True:
                         try:
-                            response = APIreq(userdata, API_ROOT + "/zones/" + userdata["Zone-ID"])
+                            response = APIreq(userdata, CF_API_ROOT + "/zones/" + userdata["Zone-ID"])
                             break
 
                         except urllib.error.URLError:
@@ -340,6 +371,7 @@ def firstrun(userdata:dict):
 
                             choice = input("Try to send request again or re-setup (T/R)? [T]: ").strip().upper()
                             if choice != "" and choice[0] == "R":
+                                # TODO: May consider making this part more humane...
                                 raise Restart()
 
                         except (HTTPErrors.NotFoundError, HTTPErrors.MethodNotAllowedError, HTTPErrors.NotImplementedError):
@@ -469,6 +501,11 @@ def APIreq(userdata:dict, req:str):
         raise
     
     return response
+
+def printconf(userdata:dict):
+    for i in ["{}: {}".format(k, userdata[k]) for k in userdata.keys()]:
+        print(i)
+
 
 if __name__ == "__main__":
     logging.basicConfig(level = logging.DEBUG, format = "[%(asctime)s] %(name)s: %(funcName)s(): [%(levelname)s] %(message)s")
