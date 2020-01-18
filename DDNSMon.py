@@ -54,7 +54,8 @@ Password must contain 8 - 32 characters, which consist of:
 """
 
 CF_API_ROOT        = r"https://api.cloudflare.com/client/v4"
-IP_API_ROOT        = r"" # TODO
+IP_API_ROOT        = r"https://api.ipify.org?format=json"
+IP6_API_ROOT	   = r"https://api6.ipify.org?format=json"
 
 
 PASSWDATT_UPB   = 10
@@ -109,6 +110,7 @@ def main():
     logger.info("Parsing configuration file...")
     try:
         tmpdata = json.load(conffile)
+        conffile.close()
     except Exception:
         logger.error("Failed to parse configuration file.")
         conffileunparsable(conffile, userdata)
@@ -213,9 +215,16 @@ def main():
         logger.info("Encryption flag not detected, leaving as-is.")
 
     # This is a test request.
-    APIreq(userdata, CF_API_ROOT + "/zones/" + userdata["Zone-ID"])
+    APIreq(CF_API_ROOT + "/zones/" + userdata["Zone-ID"], userdata = userdata)
 
-    # TODO: 
+    # TODO:
+    # WHILE TRUE:
+        # Inquire DNS record, checking if an A or AAAA record exist. FALSE: Ask for info correction and try again
+        # FROM LAST INQUIRY: Get IP addresses on the records.
+        # Get the public IP of runtime. FALSE: Ask for API substitution
+        # Compare if IP changed: FALSE: SLEEP CONTINUE
+        # Modify on-record IP addresses. FALSE: Ask for info correction and try again
+        # SLEEP
 
 def clrscr():
     dllname = "clrscr.dll"
@@ -356,7 +365,7 @@ def firstrun(userdata:dict):
                     attempts = 0
                     while True:
                         try:
-                            response = APIreq(userdata, CF_API_ROOT + "/zones/" + userdata["Zone-ID"])
+                            response = APIreq(CF_API_ROOT + "/zones/" + userdata["Zone-ID"], userdata = userdata)
                             break
 
                         except urllib.error.URLError:
@@ -460,28 +469,28 @@ def conffileunparsable(conffile, userdata:dict):
         firstrun(userdata)
         raise Restart()
        
-def APIreq(userdata:dict, req:str):
+def APIreq(req:str, userdata:dict = {}):
     logger = logging.getLogger(__name__)
     logger.debug("Logger initialized.")
 
-    headers = {
-        "Content-Type": "application/json" 
-        }
-    
-    if userdata["GlobalAPIMode"]:
-        logger.debug("Global API mode enabled.")
-        headers["X-Auth-Email"] = userdata["E-mail"]
-        headers["X-Auth-Key"] = userdata["APIKey"]
-    else:
-        headers["Authorization"] = "Bearer " + userdata["APIKey"]
+    headers = {}
+
+    if userdata:
+        headers["Content-Type"] = "application/json" 
+        if userdata["GlobalAPIMode"]:
+            logger.debug("Global API mode enabled.")
+            headers["X-Auth-Email"] = userdata["E-mail"]
+            headers["X-Auth-Key"] = userdata["APIKey"]
+        else:
+            headers["Authorization"] = "Bearer " + userdata["APIKey"]
 
     # HTTP/GET request
     try:
-        logger.info("Sending HTTPS request to Cloudflare...")
+        logger.info("Sending request to server...")
         req = urllib.request.Request(req, None, headers)
         response = urllib.request.urlopen(req)
     except urllib.error.URLError:
-        logger.error("HTTPS request failed. Please check Internet connection.")
+        logger.error("Request failed. Please check Internet connection.")
         raise
     except urllib.error.HTTPError as e:
         logger.error(e)
@@ -505,6 +514,19 @@ def APIreq(userdata:dict, req:str):
 def printconf(userdata:dict):
     for i in ["{}: {}".format(k, userdata[k]) for k in userdata.keys()]:
         print(i)
+
+def modifyconf(userdata:dict):
+    # TODO: Provide user a chance to modify the configuration rather than re-configure.
+
+    with open(CONFPATH, "w") as conffile:
+        try:
+            json.dump(userdata, conffile, indent = 4)
+        except OSError:
+            logger.error("Can't generate configuration file, referring to information below.")
+            raise
+        except Exception:
+            logger.error(UNKNOWNEXMSG)
+            raise
 
 
 if __name__ == "__main__":
