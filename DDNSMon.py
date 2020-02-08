@@ -11,21 +11,27 @@ r"""
 ------------------------------------------------------
 """
 
-__author__      = r"wxx9248"
-__copyright__   = r"Copyright 2020 © wxx9248"
-__license__     = r"GPL v3"
-__version__     = r"v2.0"
-__maintainer__  = [__author__]
-__credits__     = [__author__]
-__email__       = r"wxx9248@qq.com"
-__status__      = r"Development"
+__author__ = r"wxx9248"
+__copyright__ = r"Copyright 2020 © wxx9248"
+__license__ = r"GPL v3"
+__version__ = r"v2.0"
+__maintainer__ = [__author__]
+__credits__ = [__author__]
+__email__ = r"wxx9248@qq.com"
+__status__ = r"Development"
 
-import os, sys
-import json, base64, re, hashlib
-import logging, traceback
+import base64
 import ctypes
 import getpass
-import urllib, urllib.request
+import hashlib
+import json
+import logging
+import os
+import re
+import sys
+import traceback
+import urllib
+import urllib.request
 
 try:
     import HTTPErrors
@@ -42,10 +48,9 @@ except ImportError:
     print("Program will exit.")
     sys.exit(-1)
 
-
-CONFPATH        = r"conf.json"
-UNKNOWNEXMSG    = r"Unknown exception occurred, referring to information below."
-PASSWDREGMSG    = r"""
+CONFPATH = r"conf.json"
+UNKNOWNEXMSG = r"Unknown exception occurred, referring to information below."
+PASSWDREGMSG = r"""
 Password must contain 8 - 32 characters, which consist of:
 (1) a upper-case letter,
 (2) a lower-case letter,
@@ -53,20 +58,22 @@ Password must contain 8 - 32 characters, which consist of:
 (4) a special character (~!@&%#_)
 """
 
-CF_API_ROOT        = r"https://api.cloudflare.com/client/v4"
-IP_API_ROOT        = r"https://api.ipify.org?format=json"
-IP6_API_ROOT	   = r"https://api6.ipify.org?format=json"
+CF_API_ROOT = r"https://api.cloudflare.com/client/v4"
+IP_API_ROOT = r"https://api.ipify.org?format=json"
+IP6_API_ROOT = r"https://api6.ipify.org?format=json"
 
+PASSWDATT_UPB = 10
+NETFAILATT_UPB = 3
 
-PASSWDATT_UPB   = 10
-NETFAILATT_UPB  = 3
 
 class Restart(Exception):
     pass
 
+
 class ConfFileUnparsable(Exception):
-    def __init__(self, userdata:dict):
+    def __init__(self, userdata: dict):
         super().__init__()
+        assert userdata
         _userdata = userdata
 
     def deal(self):
@@ -83,7 +90,7 @@ class ConfFileUnparsable(Exception):
                 print("You denied reconfiguration.")
                 raise
             else:
-                firstrun(_userdata)
+                firstrun(self._userdata)
                 raise Restart()
         else:
             # As a class in Python, I feel so unsafe...
@@ -91,28 +98,28 @@ class ConfFileUnparsable(Exception):
             raise Exception("RU kiddin' me?")
 
 
-regex_Domain    = re.compile(r"(\w+)\.(\w+)$")
-regex_Email     = re.compile(r"^([\w\.]+)@(\w+)\.(\w+)$")
-regex_hextoken  = re.compile(r"^([a-f0-9]{32})$")
-regex_b64token  = re.compile(r"^([A-Za-z0-9\-\.\~\+/_]+)(=*)$")
-regex_ZoneID    = regex_hextoken
-regex_GAPIKey   = regex_hextoken
+regex_Domain = re.compile(r"(\w+)\.(\w+)$")
+regex_Email = re.compile(r"^([\w\.]+)@(\w+)\.(\w+)$")
+regex_hextoken = re.compile(r"^([a-f0-9]{32})$")
+regex_b64token = re.compile(r"^([A-Za-z0-9\-\.\~\+/_]+)(=*)$")
+regex_ZoneID = regex_hextoken
+regex_GAPIKey = regex_hextoken
 regex_DAPIToken = regex_b64token
-regex_passwd    = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[~!@&%#_])[a-zA-Z0-9~!@&%#_]{8,32}$")
+regex_passwd = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[~!@&%#_])[a-zA-Z0-9~!@&%#_]{8,32}$")
 
 
 def main():
     # Initialization
     userdata = {
-        "Zone-ID":                "",
-        "Domains":                [],
-        "GlobalAPIMode":          False,
-        "E-mail":                 "undefined",
-        "APIKey":                 "",
-        "IPv6":                   False,
-        "Encrypted":              False,
-        "EncryptTag":             "undefined",
-        "OneTimeVal":             "undefined"
+        "Zone-ID"      : "",
+        "Domains"      : [],
+        "GlobalAPIMode": False,
+        "E-mail"       : "undefined",
+        "APIKey"       : "",
+        "IPv6"         : False,
+        "Encrypted"    : False,
+        "EncryptTag"   : "undefined",
+        "OneTimeVal"   : "undefined"
     }
     logger = logging.getLogger(__name__)
 
@@ -142,7 +149,6 @@ def main():
     except Exception:
         logger.error(UNKNOWNEXMSG)
         raise
-   
 
     logger.info("Checking integrity...")
     try:
@@ -157,10 +163,10 @@ def main():
                     assert isinstance(item, str)
                     assert item
             else:
-                assert tmpdata[i] != None
+                assert tmpdata[i] is not None
 
         logger.debug("Stage 2: Regex-matching check.")
-        
+
         assert re.match(regex_ZoneID, tmpdata["Zone-ID"])
         logger.debug("Zone-ID: pass")
 
@@ -169,7 +175,7 @@ def main():
         logger.debug("Domains: pass")
 
         if tmpdata["GlobalAPIMode"]:
-            assert tmpdata["Encrypted"] != None
+            assert tmpdata["Encrypted"] is not None
             logger.debug("Encrypted: pass")
             assert re.match(regex_Email, tmpdata["E-mail"])
             logger.debug("E-mail: pass")
@@ -177,7 +183,7 @@ def main():
         if tmpdata["Encrypted"] or not tmpdata["GlobalAPIMode"]:
             assert re.match(regex_DAPIToken, tmpdata["APIKey"])
             logger.debug("APIKey 1st check: pass")
-        
+
         if tmpdata["Encrypted"]:
             assert re.match(regex_b64token, tmpdata["EncryptTag"])
             logger.debug("EncryptTag: pass")
@@ -217,7 +223,7 @@ def main():
                     p,
                     base64.b64decode(userdata["EncryptTag"].encode("utf-8")),
                     base64.b64decode(userdata["OneTimeVal"].encode("utf-8"))
-                    )
+                )
                 # Regex-matching check
                 if userdata["GlobalAPIMode"]:
                     assert re.match(regex_GAPIKey, userdata["APIKey"])
@@ -246,20 +252,22 @@ def main():
     # This is a test request.
     APIreq(CF_API_ROOT + "/zones/" + userdata["Zone-ID"], userdata = userdata)
 
-    # TODO:
-    # WHILE TRUE:
-        # Inquire DNS record, checking if an A or AAAA record exist. FALSE: Ask for info correction and try again
-        # FROM LAST INQUIRY: Get IP addresses on the records.
-        # Get the public IP of runtime. FALSE: Ask for API substitution
-        # Compare if IP changed: FALSE: SLEEP CONTINUE
-        # Modify on-record IP addresses. FALSE: Ask for info correction and try again
-        # SLEEP
+
+# TODO:
+# WHILE TRUE:
+# Inquire DNS record, checking if an A or AAAA record exist. FALSE: Ask for info correction and try again
+# FROM LAST INQUIRY: Get IP addresses on the records.
+# Get the public IP of runtime. FALSE: Ask for API substitution
+# Compare if IP changed: FALSE: SLEEP CONTINUE
+# Modify on-record IP addresses. FALSE: Ask for info correction and try again
+# SLEEP
+
 
 def clrscr():
     dllname = "clrscr.dll"
     logger = logging.getLogger(__name__)
     logger.debug("Logger initialized.")
-    
+
     try:
         dll = ctypes.CDLL(dllname)
         logger.debug("DLL attached.")
@@ -273,7 +281,8 @@ def clrscr():
     else:
         dll.clrscr()
 
-def firstrun(userdata:dict):
+
+def firstrun(userdata: dict):
     logger = logging.getLogger(__name__)
     logger.debug("Logger initialized.")
 
@@ -281,7 +290,8 @@ def firstrun(userdata:dict):
         try:
             conffile = open(CONFPATH, "w")
         except OSError:
-            logger.error("Can't open configure file \"{}\" for writing, referring to information below.".format(CONFPATH))
+            logger.error(
+                "Can't open configure file \"{}\" for writing, referring to information below.".format(CONFPATH))
             raise
         except Exception:
             logger.error(UNKNOWNEXMSG)
@@ -297,7 +307,7 @@ def firstrun(userdata:dict):
                         print("Seemingly not an proper Zone-ID, please try again.")
                     else:
                         break
-                
+
                 while True:
                     try:
                         domain = input("Please input targeted domain name: ").strip().lower()
@@ -323,7 +333,8 @@ def firstrun(userdata:dict):
                     print("To ensure the safety of your API key, configuration file encryption will be forced.")
                     while True:
                         try:
-                            userdata["E-mail"] = input("Please input the e-mail address of your Cloudflare account: ").strip()
+                            userdata["E-mail"] = input(
+                                "Please input the e-mail address of your Cloudflare account: ").strip()
                             assert re.match(regex_Email, userdata["E-mail"])
                         except AssertionError:
                             logger.debug("Invalid e-mail address provided.")
@@ -361,7 +372,7 @@ def firstrun(userdata:dict):
                     logger.debug("IPv6 support disabled.")
                     userdata["IPv6"] = False
 
-                if userdata["GlobalAPIMode"] == False:
+                if not userdata["GlobalAPIMode"]:
                     choice = input("Do you wish to enable API key encryption (Y/N)? [Y]: ").strip().upper()
                     if choice != "" and choice[0] == "N":
                         logger.debug("API key encryption disabled.")
@@ -370,7 +381,7 @@ def firstrun(userdata:dict):
                         logger.debug("API key encryption enabled.")
                         userdata["Encrypted"] = True
 
-                if userdata["Encrypted"] == True:
+                if userdata["Encrypted"]:
                     while True:
                         try:
                             p = input("Please input your password: ").strip()
@@ -412,23 +423,28 @@ def firstrun(userdata:dict):
                                 # TODO: May consider making this part more humane...
                                 raise Restart()
 
-                        except (HTTPErrors.NotFoundError, HTTPErrors.MethodNotAllowedError, HTTPErrors.NotImplementedError):
+                        except (
+                                HTTPErrors.NotFoundError, HTTPErrors.MethodNotAllowedError,
+                                HTTPErrors.NotImplementedError):
                             logger.error("Invalid server API. Developer")
                             print("Invalid server API.")
                             print("Please open an issue at the Github page of this project and attach this log file.")
                             raise
 
-                        except (HTTPErrors.RequestTimeOutError, HTTPErrors.ServiceUnavailableError, HTTPErrors.GatewayTimeOutError):
-                            attemps += 1
-                            if attemps > NETFAILATT_UPB:
-                                logger.warning("Maximium connection failure times reached. Cannot verify information correctness.")
+                        except (HTTPErrors.RequestTimeOutError, HTTPErrors.ServiceUnavailableError,
+                                HTTPErrors.GatewayTimeOutError):
+                            attempts += 1
+                            if attempts > NETFAILATT_UPB:
+                                logger.warning(
+                                    "Maximum connection failure times reached. Cannot verify information correctness.")
                                 logger.warning("Configure file will be generated as-is.")
                                 break
                             else:
-                                logger.warning("Attempt #{}: Request not reached, retry.".format(attemps))
+                                logger.warning("Attempt #{}: Request not reached, retry.".format(attempts))
 
                         except (HTTPErrors.ServerError, HTTPErrors.ClientError):
-                            logger.warning("Unable to connect to Cloudflare server. Cannot verify information correctness.")
+                            logger.warning(
+                                "Unable to connect to Cloudflare server. Cannot verify information correctness.")
                             logger.warning("Configure file will be generated as-is.")
                             break
 
@@ -438,7 +454,7 @@ def firstrun(userdata:dict):
 
                     clrscr()
                     # Encrypt API key
-                    if userdata["Encrypted"] == True:
+                    if userdata["Encrypted"]:
                         bcipher, btag, bnonce = encrypt(userdata["APIKey"], p)
                         userdata["APIKey"] = base64.b64encode(bcipher).decode("utf-8")
                         userdata["EncryptTag"] = base64.b64encode(btag).decode("utf-8")
@@ -461,17 +477,18 @@ def firstrun(userdata:dict):
                 break
         finally:
             conffile.close()
-            
 
-def encrypt(string:str, passwd:str):
-    key = hashlib.shake_256(passwd.encode("utf-8")).hexdigest(8)    # 16-byte key
+
+def encrypt(string: str, passwd: str):
+    key = hashlib.shake_256(passwd.encode("utf-8")).hexdigest(8)  # 16-byte key
     crypto = AES.new(key.encode("utf-8"), AES.MODE_EAX)
     bnonce = crypto.nonce
     bcipher, btag = crypto.encrypt_and_digest(string.encode("utf-8"))
 
     return bcipher, btag, bnonce
 
-def decrypt(bcipher:bytes, passwd:str, btag:bytes, bnonce:bytes):
+
+def decrypt(bcipher: bytes, passwd: str, btag: bytes, bnonce: bytes):
     key = hashlib.shake_256(passwd.encode("utf-8")).hexdigest(8)
     crypto = AES.new(key.encode("utf-8"), AES.MODE_EAX, nonce = bnonce)
     string = crypto.decrypt(bcipher).decode("utf-8")
@@ -479,14 +496,15 @@ def decrypt(bcipher:bytes, passwd:str, btag:bytes, bnonce:bytes):
 
     return string
 
-def APIreq(req:str, userdata:dict = {}):
+
+def APIreq(req: str, userdata: dict = {}):
     logger = logging.getLogger(__name__)
     logger.debug("Logger initialized.")
 
     headers = {}
 
     if userdata:
-        headers["Content-Type"] = "application/json" 
+        headers["Content-Type"] = "application/json"
         if userdata["GlobalAPIMode"]:
             logger.debug("Global API mode enabled.")
             headers["X-Auth-Email"] = userdata["E-mail"]
@@ -518,14 +536,16 @@ def APIreq(req:str, userdata:dict = {}):
     except Exception:
         logger.error(UNKNOWNEXMSG)
         raise
-    
+
     return response
 
-def printconf(userdata:dict):
+
+def printconf(userdata: dict):
     for i in ["{}: {}".format(k, userdata[k]) for k in userdata.keys()]:
         print(i)
 
-def modifyconf(userdata:dict):
+
+def modifyconf(userdata: dict):
     # TODO: Provide user a chance to modify the configuration rather than re-configure.
 
     with open(CONFPATH, "w") as conffile:
@@ -540,7 +560,8 @@ def modifyconf(userdata:dict):
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level = logging.DEBUG, format = "[%(asctime)s] %(name)s: %(funcName)s(): [%(levelname)s] %(message)s")
+    logging.basicConfig(level = logging.DEBUG,
+                        format = "[%(asctime)s] %(name)s: %(funcName)s(): [%(levelname)s] %(message)s")
     logger = logging.getLogger(__name__)
     logger.debug("Logger initialized.")
 
