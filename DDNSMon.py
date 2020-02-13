@@ -292,13 +292,14 @@ def main():
     # Modify on-record IP addresses. FALSE: Ask for info correction and try again
     # SLEEP
 
-    # Detect whether DNS records exists
     target_A_records = []
     target_AAAA_records = []
+    IPv4_address = IPv6_address = ""
 
     attempts = 0
-    for domain in userdata["Domains"]:
-        try:
+    try:
+        # Detect whether DNS records exists
+        for domain in userdata["Domains"]:
             # A records
             # GET zones/:zone_identifier/dns_records
             response = APIreq(
@@ -328,53 +329,61 @@ def main():
                     raise APIFailed(response)
                 elif response["result"]:
                     target_AAAA_records.append(domain)
-        except urllib.error.URLError:
-            logger.error("Internet unavailable. Will try again later.")
-        except (
-                HTTPErrors.RequestTimeOutError, HTTPErrors.ServiceUnavailableError,
-                HTTPErrors.GatewayTimeOutError) as e:
-            logger.error("Request failed, reason:", e, "Will try again later.")
-        except HTTPErrors.InternalServerError as e:
-            if attempts < NETFAILATT_UPB:
-                logger.error("Request failed, reason:", e, "Will try another", attempts, "time(s).")
-                attempts += 1
+
+        while True:
+            # Get IP address
+            response = json.load(APIreq(IP_API_ROOT))
+            if response and response["ip"]:
+                IPv4_address = response["ip"]
             else:
-                logger.error("Request failed, reason:", e)
-                logger.error("API might be changed. Please send this log to", __email__)
-                raise
-        except (HTTPErrors.UnauthorizedError, HTTPErrors.ForbiddenError) as e:
-            logger.error("Request failed, reason:", e)
-            logger.error("Your credentials may be incorrect.")
-            logger.debug("Asking for choice.")
-            while True:
-                choice = input("Try again or reconfigure (T/R)? [T]: ").strip().upper()
-                if choice != "" and choice[0] == 'R':
-                    ConfFileUnparsable(userdata).deal()
+                raise APIFailed(response)
+
+            if userdata["IPv6"]:
+                response = json.load(APIreq(IP6_API_ROOT))
+                if response and response["ip"]:
+                    if response["ip"] != IPv4_address:
+                        IPv6_address = response["ip"]
+                    else:
+                        logger.warning("IPv6 network not detected")
+                        userdata["IPv6"] = False
+                        logger.warning("IPv6 disabled")
                 else:
-                    break
-        except (HTTPErrors.ClientError, HTTPErrors.ServerError) as e:
+                    raise APIFailed(response)
+
+    except urllib.error.URLError:
+        logger.error("Internet unavailable. Will try again later.")
+    except (
+            HTTPErrors.RequestTimeOutError, HTTPErrors.ServiceUnavailableError,
+            HTTPErrors.GatewayTimeOutError, HTTPErrors.TooManyRequestsError) as e:
+        logger.error("Request failed, reason:", e, "Will try again later.")
+    except HTTPErrors.InternalServerError as e:
+        if attempts < NETFAILATT_UPB:
+            logger.error("Request failed, reason:", e, "Will try another", attempts, "time(s).")
+            attempts += 1
+        else:
             logger.error("Request failed, reason:", e)
             logger.error("API might be changed. Please send this log to", __email__)
-            raise
-        except json.JSONDecodeError as e:
-            logger.error("JSON decode failed.")
-            raise JSONFailed(e)
-        except Exception:
-            logger.error(UNKNOWNEXMSG)
-            raise
-
-    IPv4_address = IPv6_address = ""
-
-    while True:
-        # Get IP address
-        try:
-            json.load(APIreq(IP_API_ROOT))
-
-
-        except Exception:
-            logger.error(UNKNOWNEXMSG)
-            raise
-
+            raise APIFailed()
+    except (HTTPErrors.UnauthorizedError, HTTPErrors.ForbiddenError) as e:
+        logger.error("Request failed, reason:", e)
+        logger.error("Your credentials may be incorrect.")
+        logger.debug("Asking for choice.")
+        while True:
+            choice = input("Try again or reconfigure (T/R)? [T]: ").strip().upper()
+            if choice != "" and choice[0] == 'R':
+                ConfFileUnparsable(userdata).deal()
+            else:
+                break
+    except (HTTPErrors.ClientError, HTTPErrors.ServerError) as e:
+        logger.error("Request failed, reason:", e)
+        logger.error("API might be changed. Please send this log to", __email__)
+        raise APIFailed()
+    except json.JSONDecodeError as e:
+        logger.error("JSON decode failed.")
+        raise JSONFailed(e)
+    except Exception:
+        logger.error(UNKNOWNEXMSG)
+        raise
 
 def clrscr():
     dllname = "clrscr.dll"
