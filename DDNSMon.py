@@ -285,16 +285,8 @@ def main():
     else:
         logger.info("Encryption flag not detected, leaving as-is.")
 
-    # TODO:
-    # FROM LAST INQUIRY: Get IP addresses on the records.
-    # Get the public IP of runtime. FALSE: Ask for API substitution
-    # Compare if IP changed: FALSE: SLEEP CONTINUE
-    # Modify on-record IP addresses. FALSE: Ask for info correction and try again
-    # SLEEP
-
     target_A_records = []
     target_AAAA_records = []
-    IPv4_address = IPv6_address = ""
 
     attempts = 0
     try:
@@ -331,7 +323,7 @@ def main():
                     target_AAAA_records.append(domain)
 
         while True:
-            # Get IP address
+            # Get current IP address
             response = json.load(APIreq(IP_API_ROOT))
             if response and response["ip"]:
                 IPv4_address = response["ip"]
@@ -349,6 +341,14 @@ def main():
                         logger.warning("IPv6 disabled")
                 else:
                     raise APIFailed(response)
+
+            # Get recorded IP address
+
+            # Assessment
+
+            # Change records if different
+
+            # Sleep
 
     except urllib.error.URLError:
         logger.error("Internet unavailable. Will try again later.")
@@ -384,6 +384,7 @@ def main():
     except Exception:
         logger.error(UNKNOWNEXMSG)
         raise
+
 
 def clrscr():
     dllname = "clrscr.dll"
