@@ -20,6 +20,7 @@ __credits__ = [__author__]
 __email__ = r"wxx9248@qq.com"
 __status__ = r"Development"
 
+import abc
 import base64
 import ctypes
 import getpass
@@ -27,6 +28,7 @@ import hashlib
 import json
 import logging
 import os
+import pprint
 import re
 import sys
 import traceback
@@ -70,6 +72,28 @@ class Restart(Exception):
     pass
 
 
+class MException(abc.ABC):
+    def __init__(self, ofailed):
+        super().__init__()
+        self.ofailed = ofailed
+
+    @abc.abstractmethod
+    def errormsg(self):
+        """
+        Return a string formatted from ofailed.
+        :return: str
+        """
+        pass
+
+
+class APIFailed(MException):
+    def __init__(self, ofailed: dict):
+        super().__init__(ofailed)
+
+    def errormsg(self):
+        return pprint.pformat(super().ofailed)
+
+
 class ConfFileUnparsable(Exception):
     def __init__(self, userdata: dict):
         super().__init__()
@@ -81,9 +105,6 @@ class ConfFileUnparsable(Exception):
         logger.debug("Logger initialized.")
 
         if hasattr(self, "_userdata"):
-            logger.error("Can't parse configuration file.")
-            print("The configuration file seems corrupted or unparsable.")
-
             choice = input("Do you wish to re-setup the program (Y/N)? [Y]: ").strip().upper()
             if choice != "" and choice[0] == "N":
                 logger.debug("User denied to reconfigure.")
@@ -98,7 +119,7 @@ class ConfFileUnparsable(Exception):
             raise Exception("RU kiddin' me?")
 
 
-regex_Domain = re.compile(r"(\w+)\.(\w+)$")
+regex_Domain = re.compile(r"(\w+)\.(\w+){3,255}$")
 regex_Email = re.compile(r"^([\w\.]+)@(\w+)\.(\w+)$")
 regex_hextoken = re.compile(r"^([a-f0-9]{32})$")
 regex_b64token = re.compile(r"^([A-Za-z0-9\-\.\~\+/_]+)(=*)$")
@@ -133,8 +154,8 @@ def main():
             try:
                 tmpdata = json.load(conffile)
                 conffile.close()
-            except Exception:
-                logger.error("Failed to parse configuration file.")
+            except Exception as e:
+                logger.error("Failed to parse configuration file. Reason:", e)
                 raise ConfFileUnparsable(userdata)
     except FileNotFoundError:
         logger.warning("Configure file not found.")
@@ -249,20 +270,81 @@ def main():
     else:
         logger.info("Encryption flag not detected, leaving as-is.")
 
-    # This is a test request.
-    APIreq(CF_API_ROOT + "/zones/" + userdata["Zone-ID"], userdata = userdata)
+    # TODO:
+    # FROM LAST INQUIRY: Get IP addresses on the records.
+    # Get the public IP of runtime. FALSE: Ask for API substitution
+    # Compare if IP changed: FALSE: SLEEP CONTINUE
+    # Modify on-record IP addresses. FALSE: Ask for info correction and try again
+    # SLEEP
 
+    # Inquire DNS records
+    target_A_records = []
+    target_AAAA_records = []
+    attempts = 0
+    for domain in userdata["Domains"]:
+        try:
+            # A records
+            # GET zones/:zone_identifier/dns_records
+            response = APIreq(
+                "{}/zones/{}/dns_records?{}={}&{}={}".format(
+                    CF_API_ROOT, userdata["Zone-ID"],
+                    "name", domain,
+                    "type", "A"
+                ), userdata = userdata)
+            response = json.load(response)
+            if not response["success"]:
+                logger.error("Cloudflare API failed")
+                raise APIFailed(response)
+            elif response["result"]:
+                target_A_records.append(domain)
 
-# TODO:
-# WHILE TRUE:
-# Inquire DNS record, checking if an A or AAAA record exist. FALSE: Ask for info correction and try again
-# FROM LAST INQUIRY: Get IP addresses on the records.
-# Get the public IP of runtime. FALSE: Ask for API substitution
-# Compare if IP changed: FALSE: SLEEP CONTINUE
-# Modify on-record IP addresses. FALSE: Ask for info correction and try again
-# SLEEP
+            # AAAA records
+            response = APIreq(
+                "{}/zones/{}/dns_records?{}={}&{}={}".format(
+                    CF_API_ROOT, userdata["Zone-ID"],
+                    "name", domain,
+                    "type", "AAAA"
+                ), userdata = userdata)
+            response = json.load(response)
+            if not response["success"]:
+                logger.error("Cloudflare API failed")
+                raise APIFailed(response)
+            elif response["result"]:
+                target_AAAA_records.append(domain)
 
+        except urllib.error.URLError:
+            logger.error("Internet unavailable. Will try again later.")
+        except (
+                HTTPErrors.RequestTimeOutError, HTTPErrors.ServiceUnavailableError,
+                HTTPErrors.GatewayTimeOutError) as e:
+            logger.error("Request failed, reason:", e, "Will try again later.")
+        except HTTPErrors.InternalServerError as e:
+            if attempts < NETFAILATT_UPB:
+                logger.error("Request failed, reason:", e, "Will try another", attempts, "time(s).")
+                attempts += 1
+            else:
+                logger.error("Request failed, reason:", e)
+                logger.error("API might be changed. Please send this log to", __email__)
+                raise
+        except (HTTPErrors.UnauthorizedError, HTTPErrors.ForbiddenError) as e:
+            logger.error("Request failed, reason:", e)
+            logger.error("Your credentials may be incorrect.")
+            logger.debug("Asking for choice.")
+            while True:
+                choice = input("Try again or reconfigure (T/R)? [T]: ").strip().upper()
+                if choice != "" and choice[0] == 'R':
+                    ConfFileUnparsable(userdata).deal()
+                else:
+                    break
+        except (HTTPErrors.ClientError, HTTPErrors.ServerError) as e:
+            logger.error("Request failed, reason:", e)
+            logger.error("API might be changed. Please send this log to", __email__)
+            raise
+        except Exception:
+            logger.error(UNKNOWNEXMSG)
+            raise
 
+        
 def clrscr():
     dllname = "clrscr.dll"
     logger = logging.getLogger(__name__)
@@ -318,7 +400,7 @@ def firstrun(userdata: dict):
                         print("Seemingly not an proper domain name, please try again.")
                     else:
                         choice = input("Do you wish to add another domain name (Y/N)? [N]: ").strip().upper()
-                        if choice != "" and choice[0] == "Y":
+                        if choice != "" and choice[0] == 'Y':
                             pass
                         else:
                             break
@@ -502,6 +584,7 @@ def APIreq(req: str, userdata: dict = {}):
     logger.debug("Logger initialized.")
 
     headers = {}
+    response = None
 
     if userdata:
         headers["Content-Type"] = "application/json"
@@ -570,8 +653,21 @@ if __name__ == "__main__":
             main()
         except Restart:
             logger.info("Restarting into program entry point...")
+        except MException as e:
+            print()
+            logger.error("*********************************")
+            logger.error("An fatal exception has occurred:")
+            for line in traceback.format_exc().splitlines():
+                logger.error(line)
+            logger.error("")
+            logger.error("Additional information:")
+            for line in e.errormsg().splitlines():
+                logger.error(line)
+            logger.error("")
+            logger.error("Program exits abnormally.")
+            logger.error("*********************************")
         except Exception as e:
-            print("")
+            print()
             logger.error("*********************************")
             logger.error("An fatal exception has occurred:")
             for line in traceback.format_exc().splitlines():
@@ -582,7 +678,7 @@ if __name__ == "__main__":
             logger.error("*********************************")
             break
         except BaseException as e:
-            print("")
+            print()
             logger.error("==============================")
             logger.error("Program was terminated due to:\n")
             logger.error(re.search(r"<class '(.+)'>", str(e.__class__)).group(1) + ": " + str(e) + "\n")

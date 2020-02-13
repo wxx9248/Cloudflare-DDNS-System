@@ -16,53 +16,76 @@ This file defines common HTTP errors.
 
 import urllib.error
 
+
 class ClientError(urllib.error.HTTPError):
     # 4xx
     pass
+
 
 class BadRequestError(ClientError):
     # 400
     pass
 
+
 class UnauthorizedError(ClientError):
     # 401
     pass
+
 
 class ForbiddenError(ClientError):
     # 403
     pass
 
+
 class NotFoundError(ClientError):
     # 404
     pass
+
 
 class MethodNotAllowedError(ClientError):
     # 405
     pass
 
+
 class RequestTimeOutError(ClientError):
     # 408
     pass
+
+
+class UnsupportedMediaTypeError(ClientError):
+    # 415
+    pass
+
+
+class TooManyRequestsError(ClientError):
+    # 429
+    pass
+
 
 class ServerError(urllib.error.HTTPError):
     # 5xx
     pass
 
+
 class InternalServerError(ServerError):
     # 500
     pass
+
 
 class NotImplementedError(ServerError):
     # 501
     pass
 
+
 class BadGatewayError(ServerError):
     # 502
     pass
 
+
 class ServiceUnavailableError(ServerError):
     # 503
     pass
+
 
 class GatewayTimeOutError(ServerError):
     # 504
@@ -78,9 +101,11 @@ HTTPErrorMap = {
     404: NotFoundError,
     405: MethodNotAllowedError,
     408: RequestTimeOutError,
+    415: UnsupportedMediaTypeError,
+    429: TooManyRequestsError,
     500: InternalServerError,
     501: NotImplementedError,
     502: BadGatewayError,
     503: ServiceUnavailableError,
     504: GatewayTimeOutError
-    }
+}
