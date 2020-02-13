@@ -94,6 +94,20 @@ class APIFailed(MException):
         return pprint.pformat(super().ofailed)
 
 
+class JSONFailed(MException):
+    def __init__(self, ofailed: json.JSONDecodeError):
+        super().__init__(ofailed)
+
+    def errormsg(self):
+        head = "Decode failed in line {}, column {}".format(
+            super().ofailed.lineno, super().ofailed.colno
+        )
+        body = ""
+        for i, line in enumerate(str(super().ofailed.doc).splitlines()):
+            body += "{}: {}\n".format(i, line)
+        return head + "\n\n" + body
+
+
 class ConfFileUnparsable(Exception):
     def __init__(self, userdata: dict):
         super().__init__()
@@ -154,8 +168,9 @@ def main():
             try:
                 tmpdata = json.load(conffile)
                 conffile.close()
-            except Exception as e:
-                logger.error("Failed to parse configuration file. Reason:", e)
+            except json.JSONDecodeError as e:
+                logger.error("Failed to parse configuration file. Detailed reason:")
+                logger.error(JSONFailed(e).errormsg())
                 raise ConfFileUnparsable(userdata)
     except FileNotFoundError:
         logger.warning("Configure file not found.")
@@ -277,9 +292,10 @@ def main():
     # Modify on-record IP addresses. FALSE: Ask for info correction and try again
     # SLEEP
 
-    # Inquire DNS records
+    # Detect whether DNS records exists
     target_A_records = []
     target_AAAA_records = []
+
     attempts = 0
     for domain in userdata["Domains"]:
         try:
@@ -291,7 +307,7 @@ def main():
                     "name", domain,
                     "type", "A"
                 ), userdata = userdata)
-            response = json.load(response)
+            response = json.load(response.read())
             if not response["success"]:
                 logger.error("Cloudflare API failed")
                 raise APIFailed(response)
@@ -299,19 +315,19 @@ def main():
                 target_A_records.append(domain)
 
             # AAAA records
-            response = APIreq(
-                "{}/zones/{}/dns_records?{}={}&{}={}".format(
-                    CF_API_ROOT, userdata["Zone-ID"],
-                    "name", domain,
-                    "type", "AAAA"
-                ), userdata = userdata)
-            response = json.load(response)
-            if not response["success"]:
-                logger.error("Cloudflare API failed")
-                raise APIFailed(response)
-            elif response["result"]:
-                target_AAAA_records.append(domain)
-
+            if userdata["IPv6"]:
+                response = APIreq(
+                    "{}/zones/{}/dns_records?{}={}&{}={}".format(
+                        CF_API_ROOT, userdata["Zone-ID"],
+                        "name", domain,
+                        "type", "AAAA"
+                    ), userdata = userdata)
+                response = json.load(response)
+                if not response["success"]:
+                    logger.error("Cloudflare API failed")
+                    raise APIFailed(response)
+                elif response["result"]:
+                    target_AAAA_records.append(domain)
         except urllib.error.URLError:
             logger.error("Internet unavailable. Will try again later.")
         except (
@@ -340,11 +356,26 @@ def main():
             logger.error("Request failed, reason:", e)
             logger.error("API might be changed. Please send this log to", __email__)
             raise
+        except json.JSONDecodeError as e:
+            logger.error("JSON decode failed.")
+            raise JSONFailed(e)
         except Exception:
             logger.error(UNKNOWNEXMSG)
             raise
 
-        
+    IPv4_address = IPv6_address = ""
+
+    while True:
+        # Get IP address
+        try:
+            json.load(APIreq(IP_API_ROOT))
+
+
+        except Exception:
+            logger.error(UNKNOWNEXMSG)
+            raise
+
+
 def clrscr():
     dllname = "clrscr.dll"
     logger = logging.getLogger(__name__)
