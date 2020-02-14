@@ -31,8 +31,9 @@ import os
 import pprint
 import re
 import sys
+import time
 import traceback
-import urllib
+import urllib.error
 import urllib.request
 
 try:
@@ -67,12 +68,14 @@ IP6_API_ROOT = r"https://api6.ipify.org?format=json"
 PASSWDATT_UPB = 10
 NETFAILATT_UPB = 3
 
+SLEEPSEC = 60 * 30      # 30 minutes
+
 
 class Restart(Exception):
     pass
 
 
-class MException(abc.ABC):
+class MException(Exception, abc.ABC):
     def __init__(self, ofailed):
         super().__init__()
         self.ofailed = ofailed
@@ -91,7 +94,7 @@ class APIFailed(MException):
         super().__init__(ofailed)
 
     def errormsg(self):
-        return pprint.pformat(super().ofailed)
+        return pprint.pformat(self.ofailed)
 
 
 class JSONFailed(MException):
@@ -100,19 +103,19 @@ class JSONFailed(MException):
 
     def errormsg(self):
         head = "Decode failed in line {}, column {}".format(
-            super().ofailed.lineno, super().ofailed.colno
+            self.ofailed.lineno, self.ofailed.colno
         )
         body = ""
-        for i, line in enumerate(str(super().ofailed.doc).splitlines()):
+        for i, line in enumerate(str(self.ofailed.doc).splitlines()):
             body += "{}: {}\n".format(i, line)
         return head + "\n\n" + body
 
 
-class ConfFileUnparsable(Exception):
+class ConfFileDamaged(Exception):
     def __init__(self, userdata: dict):
         super().__init__()
         assert userdata
-        _userdata = userdata
+        self._userdata = userdata
 
     def deal(self):
         logger = logging.getLogger(__name__)
@@ -133,7 +136,7 @@ class ConfFileUnparsable(Exception):
             raise Exception("RU kiddin' me?")
 
 
-regex_Domain = re.compile(r"(\w+)\.(\w+){3,255}$")
+regex_Domain = re.compile(r"^(\w+)\.(\w+){3,255}$")
 regex_Email = re.compile(r"^([\w\.]+)@(\w+)\.(\w+)$")
 regex_hextoken = re.compile(r"^([a-f0-9]{32})$")
 regex_b64token = re.compile(r"^([A-Za-z0-9\-\.\~\+/_]+)(=*)$")
@@ -146,15 +149,15 @@ regex_passwd = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[~!@&%#_])[a-
 def main():
     # Initialization
     userdata = {
-        "Zone-ID"      : "",
-        "Domains"      : [],
-        "GlobalAPIMode": False,
-        "E-mail"       : "undefined",
-        "APIKey"       : "",
-        "IPv6"         : False,
-        "Encrypted"    : False,
-        "EncryptTag"   : "undefined",
-        "OneTimeVal"   : "undefined"
+        "Zone-ID":          "",
+        "Domains":          [],
+        "GlobalAPIMode":    False,
+        "E-mail":           "undefined",
+        "APIKey":           "",
+        "IPv6":             False,
+        "Encrypted":        False,
+        "EncryptTag":       "undefined",
+        "OneTimeVal":       "undefined"
     }
     logger = logging.getLogger(__name__)
 
@@ -162,29 +165,27 @@ def main():
     clrscr()
     print(sys.modules[__name__].__doc__)
 
-    try:
-        with open(CONFPATH) as conffile:
-            logger.info("Parsing configuration file...")
-            try:
+    while True:
+        try:
+            with open(CONFPATH) as conffile:
+                logger.info("Parsing configuration file...")
                 tmpdata = json.load(conffile)
-                conffile.close()
-            except json.JSONDecodeError as e:
-                logger.error("Failed to parse configuration file. Detailed reason:")
-                logger.error(JSONFailed(e).errormsg())
-                raise ConfFileUnparsable(userdata)
-    except FileNotFoundError:
-        logger.warning("Configure file not found.")
-        logger.debug("Entering first-run configuration...")
-        firstrun(userdata)
-        conffile = open(CONFPATH)
-    except OSError:
-        logger.error("Can't open configure file \"{}\" for reading, referring to information below.".format(CONFPATH))
-        raise
-    except ConfFileUnparsable as e:
-        e.deal()
-    except Exception:
-        logger.error(UNKNOWNEXMSG)
-        raise
+        except FileNotFoundError:
+            logger.warning("Configure file not found.")
+            logger.debug("Entering first-run configuration...")
+            firstrun(userdata)
+        except OSError:
+            logger.error("Can't open configure file \"{}\" for reading, referring to information below.".format(CONFPATH))
+            raise
+        except json.JSONDecodeError as e:
+            logger.error("Failed to parse configuration file. Detailed reason:")
+            logger.error(JSONFailed(e).errormsg())
+            ConfFileDamaged(userdata).deal()
+        except Exception:
+            logger.error(UNKNOWNEXMSG)
+            raise
+        else:
+            break
 
     logger.info("Checking integrity...")
     try:
@@ -228,7 +229,7 @@ def main():
 
     except AssertionError:
         logger.error("Integrity verification failed.")
-        ConfFileUnparsable(userdata).deal()
+        ConfFileDamaged(userdata).deal()
     else:
         userdata = tmpdata
 
@@ -272,10 +273,10 @@ def main():
                     logger.error("Incorrect password provided, please try again.")
                 else:
                     logger.error("Please consider configuration file corruption.")
-                    ConfFileUnparsable(userdata).deal()
+                    ConfFileDamaged(userdata).deal()
             except AssertionError:
                 logger.error("APIKey 2nd check: failed")
-                ConfFileUnparsable(userdata).deal()
+                ConfFileDamaged(userdata).deal()
             except Exception:
                 logger.error(UNKNOWNEXMSG)
                 raise
@@ -285,105 +286,143 @@ def main():
     else:
         logger.info("Encryption flag not detected, leaving as-is.")
 
-    target_A_records = []
-    target_AAAA_records = []
+    target_A_records = {}
+    target_AAAA_records = {}
 
     attempts = 0
-    try:
-        # Detect whether DNS records exists
-        for domain in userdata["Domains"]:
-            # A records
-            # GET zones/:zone_identifier/dns_records
-            response = APIreq(
-                "{}/zones/{}/dns_records?{}={}&{}={}".format(
-                    CF_API_ROOT, userdata["Zone-ID"],
-                    "name", domain,
-                    "type", "A"
-                ), userdata = userdata)
-            response = json.load(response.read())
-            if not response["success"]:
-                logger.error("Cloudflare API failed")
-                raise APIFailed(response)
-            elif response["result"]:
-                target_A_records.append(domain)
-
-            # AAAA records
-            if userdata["IPv6"]:
-                response = APIreq(
-                    "{}/zones/{}/dns_records?{}={}&{}={}".format(
-                        CF_API_ROOT, userdata["Zone-ID"],
-                        "name", domain,
-                        "type", "AAAA"
-                    ), userdata = userdata)
-                response = json.load(response)
-                if not response["success"]:
-                    logger.error("Cloudflare API failed")
-                    raise APIFailed(response)
-                elif response["result"]:
-                    target_AAAA_records.append(domain)
-
-        while True:
+    switchbit = True
+    while True:
+        try:
             # Get current IP address
-            response = json.load(APIreq(IP_API_ROOT))
+            response = json.load(APIreq(IP_API_ROOT).read())
             if response and response["ip"]:
                 IPv4_address = response["ip"]
             else:
                 raise APIFailed(response)
 
             if userdata["IPv6"]:
-                response = json.load(APIreq(IP6_API_ROOT))
+                response = json.load(APIreq(IP6_API_ROOT).read())
                 if response and response["ip"]:
                     if response["ip"] != IPv4_address:
                         IPv6_address = response["ip"]
                     else:
                         logger.warning("IPv6 network not detected")
                         userdata["IPv6"] = False
-                        logger.warning("IPv6 disabled")
+                        logger.warning("IPv6 temporarily disabled.")
                 else:
                     raise APIFailed(response)
 
-            # Get recorded IP address
+            if switchbit:
+                # Detect whether DNS records exists
+                # and get IP address BTW
+                for domain in userdata["Domains"]:
+                    # A records
+                    # GET zones/:zone_identifier/dns_records
+                    response = json.load(APIreq(
+                        "{}/zones/{}/dns_records?{}={}&{}={}".format(
+                            CF_API_ROOT, userdata["Zone-ID"],
+                            "name", domain,
+                            "type", "A"
+                        ), userdata = userdata).read())
+
+                    if not response["success"]:
+                        logger.error("Cloudflare API failed")
+                        raise APIFailed(response)
+                    elif response["result"]:
+                        target_A_records[domain] = response["result"][0]["content"]
+
+                    # AAAA records
+                    if userdata["IPv6"]:
+                        response = json.load(APIreq(
+                            "{}/zones/{}/dns_records?{}={}&{}={}".format(
+                                CF_API_ROOT, userdata["Zone-ID"],
+                                "name", domain,
+                                "type", "AAAA"
+                            ), userdata = userdata).read())
+
+                        if not response["success"]:
+                            logger.error("Cloudflare API failed")
+                            raise APIFailed(response)
+                        elif response["result"]:
+                            target_AAAA_records[domain] = response["result"][0]["content"]
+                switchbit = False
+            else:
+                # Only get IP address
+                # v4
+                for domain in target_A_records:
+                    response = json.load(APIreq(
+                        "{}/zones/{}/dns_records?{}={}&{}={}".format(
+                            CF_API_ROOT, userdata["Zone-ID"],
+                            "name", domain,
+                            "type", "A"
+                        ), userdata = userdata).read())
+                    if not response["success"]:
+                        logger.error("Cloudflare API failed")
+                        raise APIFailed(response)
+                    elif response["result"]:
+                        target_A_records[domain] = response["result"][0]["content"]
+                # v6
+                for domain in target_AAAA_records:
+                    response = json.load(APIreq(
+                        "{}/zones/{}/dns_records?{}={}&{}={}".format(
+                            CF_API_ROOT, userdata["Zone-ID"],
+                            "name", domain,
+                            "type", "AAAA"
+                        ), userdata = userdata).read())
+                    if not response["success"]:
+                        logger.error("Cloudflare API failed")
+                        raise APIFailed(response)
+                    elif response["result"]:
+                        target_AAAA_records[domain] = response["result"][0]["content"]
 
             # Assessment
-
             # Change records if different
+            # v4
+            for domain in target_A_records:
+                pass
+
+            # v6
+            if userdata["IPv6"]:
+                for domain in target_AAAA_records:
+                    pass
 
             # Sleep
+            time.sleep(SLEEPSEC)
 
-    except urllib.error.URLError:
-        logger.error("Internet unavailable. Will try again later.")
-    except (
-            HTTPErrors.RequestTimeOutError, HTTPErrors.ServiceUnavailableError,
-            HTTPErrors.GatewayTimeOutError, HTTPErrors.TooManyRequestsError) as e:
-        logger.error("Request failed, reason:", e, "Will try again later.")
-    except HTTPErrors.InternalServerError as e:
-        if attempts < NETFAILATT_UPB:
-            logger.error("Request failed, reason:", e, "Will try another", attempts, "time(s).")
-            attempts += 1
-        else:
+        except urllib.error.URLError:
+            logger.error("Internet unavailable. Will try again later.")
+        except (
+                HTTPErrors.RequestTimeOutError, HTTPErrors.ServiceUnavailableError,
+                HTTPErrors.GatewayTimeOutError, HTTPErrors.TooManyRequestsError) as e:
+            logger.error("Request failed, reason:", e, "Will try again later.")
+        except HTTPErrors.InternalServerError as e:
+            if attempts < NETFAILATT_UPB:
+                logger.error("Request failed, reason:", e, "Will try another", attempts, "time(s).")
+                attempts += 1
+            else:
+                logger.error("Request failed, reason:", e)
+                logger.error("API might be changed. Please send this log to", __email__)
+                raise
+        except (HTTPErrors.UnauthorizedError, HTTPErrors.ForbiddenError) as e:
+            logger.error("Request failed, reason:", e)
+            logger.error("Your credentials may be incorrect.")
+            logger.debug("Asking for choice.")
+            while True:
+                choice = input("Try again or reconfigure (T/R)? [T]: ").strip().upper()
+                if choice != "" and choice[0] == 'R':
+                    ConfFileDamaged(userdata).deal()
+                else:
+                    break
+        except (HTTPErrors.ClientError, HTTPErrors.ServerError) as e:
             logger.error("Request failed, reason:", e)
             logger.error("API might be changed. Please send this log to", __email__)
-            raise APIFailed()
-    except (HTTPErrors.UnauthorizedError, HTTPErrors.ForbiddenError) as e:
-        logger.error("Request failed, reason:", e)
-        logger.error("Your credentials may be incorrect.")
-        logger.debug("Asking for choice.")
-        while True:
-            choice = input("Try again or reconfigure (T/R)? [T]: ").strip().upper()
-            if choice != "" and choice[0] == 'R':
-                ConfFileUnparsable(userdata).deal()
-            else:
-                break
-    except (HTTPErrors.ClientError, HTTPErrors.ServerError) as e:
-        logger.error("Request failed, reason:", e)
-        logger.error("API might be changed. Please send this log to", __email__)
-        raise APIFailed()
-    except json.JSONDecodeError as e:
-        logger.error("JSON decode failed.")
-        raise JSONFailed(e)
-    except Exception:
-        logger.error(UNKNOWNEXMSG)
-        raise
+            raise
+        except json.JSONDecodeError as e:
+            logger.error("JSON decode failed.")
+            raise JSONFailed(e)
+        except Exception:
+            logger.error(UNKNOWNEXMSG)
+            raise
 
 
 def clrscr():
@@ -411,16 +450,7 @@ def firstrun(userdata: dict):
 
     while True:
         try:
-            conffile = open(CONFPATH, "w")
-        except OSError:
-            logger.error(
-                "Can't open configure file \"{}\" for writing, referring to information below.".format(CONFPATH))
-            raise
-        except Exception:
-            logger.error(UNKNOWNEXMSG)
-            raise
-        else:
-            try:
+            with open(CONFPATH, "w") as conffile:
                 while True:
                     try:
                         userdata["Zone-ID"] = input("Please input the Zone-ID of your domain: ").strip()
@@ -528,7 +558,7 @@ def firstrun(userdata: dict):
                     attempts = 0
                     while True:
                         try:
-                            response = APIreq(CF_API_ROOT + "/zones/" + userdata["Zone-ID"], userdata = userdata)
+                            APIreq(CF_API_ROOT + "/zones/" + userdata["Zone-ID"], userdata = userdata)
                             break
 
                         except urllib.error.URLError:
@@ -536,9 +566,10 @@ def firstrun(userdata: dict):
                             logger.warning("Configure file will be generated as-is.")
                             break
 
-                        except (HTTPErrors.BadRequestError, HTTPErrors.UnauthorizedError, HTTPErrors.ForbiddenError):
+                        except (
+                        HTTPErrors.BadRequestError, HTTPErrors.UnauthorizedError, HTTPErrors.ForbiddenError):
                             logger.warning("Server API returned exceptional code.")
-                            logger.warning("May be information mismatch, printing message.")
+                            logger.warning("May be information mismatch.")
                             print("Information provided may be incorrect.")
 
                             choice = input("Try to send request again or re-setup (T/R)? [T]: ").strip().upper()
@@ -548,14 +579,15 @@ def firstrun(userdata: dict):
 
                         except (
                                 HTTPErrors.NotFoundError, HTTPErrors.MethodNotAllowedError,
-                                HTTPErrors.NotImplementedError):
-                            logger.error("Invalid server API. Developer")
-                            print("Invalid server API.")
-                            print("Please open an issue at the Github page of this project and attach this log file.")
+                                HTTPErrors.NotImplementedError, HTTPErrors.UnsupportedMediaTypeError):
+                            logger.error("Invalid server API.")
+                            logger.error(
+                                "Please open an issue at the Github page of this project and attach this log "
+                                "file.")
                             raise
 
                         except (HTTPErrors.RequestTimeOutError, HTTPErrors.ServiceUnavailableError,
-                                HTTPErrors.GatewayTimeOutError):
+                                HTTPErrors.GatewayTimeOutError, HTTPErrors.TooManyRequestsError):
                             attempts += 1
                             if attempts > NETFAILATT_UPB:
                                 logger.warning(
@@ -592,14 +624,13 @@ def firstrun(userdata: dict):
                     except Exception:
                         logger.error(UNKNOWNEXMSG)
                         raise
-            except BaseException:
-                conffile.close()
-                os.remove(CONFPATH)
-                raise
-            else:
-                break
-        finally:
-            conffile.close()
+        except OSError:
+            logger.error(
+                "Can't open configure file \"{}\" for writing, referring to information below.".format(CONFPATH))
+            raise
+        except Exception:
+            logger.error(UNKNOWNEXMSG)
+            raise
 
 
 def encrypt(string: str, passwd: str):
@@ -641,9 +672,6 @@ def APIreq(req: str, userdata: dict = {}):
         logger.info("Sending request to server...")
         req = urllib.request.Request(req, None, headers)
         response = urllib.request.urlopen(req)
-    except urllib.error.URLError:
-        logger.error("Request failed. Please check Internet connection.")
-        raise
     except urllib.error.HTTPError as e:
         logger.error(e)
         try:
@@ -657,6 +685,9 @@ def APIreq(req: str, userdata: dict = {}):
                 raise HTTPErrors.ServerError(e.url, e.code, e.msg, e.hdrs, e.fp)
             else:
                 raise
+    except urllib.error.URLError as e:
+        logger.error("Request failed. Please check Internet connection.")
+        raise
     except Exception:
         logger.error(UNKNOWNEXMSG)
         raise
