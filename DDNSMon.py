@@ -68,7 +68,7 @@ IP6_API_ROOT = r"https://api6.ipify.org?format=json"
 PASSWDATT_UPB = 10
 NETFAILATT_UPB = 3
 
-SLEEPSEC = 60 * 30      # 30 minutes
+SLEEPSEC = 60 * 30  # 30 minutes
 
 
 class Restart(Exception):
@@ -124,8 +124,7 @@ class ConfFileDamaged(Exception):
         if hasattr(self, "_userdata"):
             choice = input("Do you wish to re-setup the program (Y/N)? [Y]: ").strip().upper()
             if choice != "" and choice[0] == "N":
-                logger.debug("User denied to reconfigure.")
-                print("You denied reconfiguration.")
+                logger.warning("User denied to reconfigure.")
                 raise
             else:
                 firstrun(self._userdata)
@@ -149,15 +148,15 @@ regex_passwd = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[~!@&%#_])[a-
 def main():
     # Initialization
     userdata = {
-        "Zone-ID":          "",
-        "Domains":          [],
-        "GlobalAPIMode":    False,
-        "E-mail":           "undefined",
-        "APIKey":           "",
-        "IPv6":             False,
-        "Encrypted":        False,
-        "EncryptTag":       "undefined",
-        "OneTimeVal":       "undefined"
+        "Zone-ID"      : "",
+        "Domains"      : [],
+        "GlobalAPIMode": False,
+        "E-mail"       : "undefined",
+        "APIKey"       : "",
+        "IPv6"         : False,
+        "Encrypted"    : False,
+        "EncryptTag"   : "undefined",
+        "OneTimeVal"   : "undefined"
     }
     logger = logging.getLogger(__name__)
 
@@ -175,7 +174,8 @@ def main():
             logger.debug("Entering first-run configuration...")
             firstrun(userdata)
         except OSError:
-            logger.error("Can't open configure file \"{}\" for reading, referring to information below.".format(CONFPATH))
+            logger.error(
+                "Can't open configure file \"{}\" for reading, referring to information below.".format(CONFPATH))
             raise
         except json.JSONDecodeError as e:
             logger.error("Failed to parse configuration file. Detailed reason:")
@@ -244,8 +244,8 @@ def main():
                     p = getpass.getpass("Please input your password: ").strip()
                     assert re.match(regex_passwd, p)
                 except AssertionError:
-                    logger.debug("Invalid password provided, printing hint.")
-                    print(PASSWDREGMSG)
+                    logger.error("Invalid password provided")
+                    logger.info(PASSWDREGMSG)
                 except Exception:
                     logger.error(UNKNOWNEXMSG)
                     raise
@@ -406,7 +406,6 @@ def main():
         except (HTTPErrors.UnauthorizedError, HTTPErrors.ForbiddenError) as e:
             logger.error("Request failed, reason:", e)
             logger.error("Your credentials may be incorrect.")
-            logger.debug("Asking for choice.")
             while True:
                 choice = input("Try again or reconfigure (T/R)? [T]: ").strip().upper()
                 if choice != "" and choice[0] == 'R':
@@ -456,8 +455,7 @@ def firstrun(userdata: dict):
                         userdata["Zone-ID"] = input("Please input the Zone-ID of your domain: ").strip()
                         assert re.match(regex_ZoneID, userdata["Zone-ID"])
                     except AssertionError:
-                        logger.debug("Invalid Zone-ID provided.")
-                        print("Seemingly not an proper Zone-ID, please try again.")
+                        logger.error("Invalid Zone-ID provided.")
                     else:
                         break
 
@@ -467,8 +465,7 @@ def firstrun(userdata: dict):
                         assert re.match(regex_Domain, domain)
                         userdata["Domains"].append(domain)
                     except AssertionError:
-                        logger.debug("Invalid domain name provided.")
-                        print("Seemingly not an proper domain name, please try again.")
+                        logger.error("Invalid domain name provided.")
                     else:
                         choice = input("Do you wish to add another domain name (Y/N)? [N]: ").strip().upper()
                         if choice != "" and choice[0] == 'Y':
@@ -476,22 +473,21 @@ def firstrun(userdata: dict):
                         else:
                             break
 
-                print("Do you wish to use your global API key?")
-                print("ATTENTION! GLOBAL API KEY LEAKAGE WILL THREATEN YOUR *WHOLE* CLOUDFLARE ACCOUNT!")
+                logger.info("Do you wish to use your global API key?")
+                logger.warning("ATTENTION! GLOBAL API KEY LEAKAGE WILL THREATEN YOUR *WHOLE* CLOUDFLARE ACCOUNT!")
                 choice = input("Your choice (Y/N)? [N]: ").strip().upper()
                 if choice != "" and choice[0] == "Y":
-                    logger.debug("Global API mode activated.")
+                    logger.warning("Global API mode activated.")
                     userdata["GlobalAPIMode"] = True
                     userdata["Encrypted"] = True
-                    print("To ensure the safety of your API key, configuration file encryption will be forced.")
+                    logger.info("To ensure the safety of your API key, configuration file encryption will be forced.")
                     while True:
                         try:
                             userdata["E-mail"] = input(
                                 "Please input the e-mail address of your Cloudflare account: ").strip()
                             assert re.match(regex_Email, userdata["E-mail"])
                         except AssertionError:
-                            logger.debug("Invalid e-mail address provided.")
-                            print("Seemingly not an e-mail address, please try again.")
+                            logger.error("Invalid e-mail address provided.")
                         else:
                             break
 
@@ -500,8 +496,7 @@ def firstrun(userdata: dict):
                             userdata["APIKey"] = input("Please input your global API key: ").strip()
                             assert re.match(regex_GAPIKey, userdata["APIKey"])
                         except AssertionError:
-                            logger.debug("Invalid API key provided.")
-                            print("Seemingly not an proper API key, please try again.")
+                            logger.error("Invalid API key provided.")
                         else:
                             break
                 else:
@@ -511,8 +506,7 @@ def firstrun(userdata: dict):
                             userdata["APIKey"] = input("Please input your DNS-dedicated API token: ").strip()
                             assert re.match(regex_DAPIToken, userdata["APIKey"])
                         except AssertionError:
-                            logger.debug("Invalid API key provided.")
-                            print("Seemingly not an proper API key, please try again.")
+                            logger.error("Invalid API key provided.")
                         else:
                             break
 
@@ -528,10 +522,10 @@ def firstrun(userdata: dict):
                 if not userdata["GlobalAPIMode"]:
                     choice = input("Do you wish to enable API key encryption (Y/N)? [Y]: ").strip().upper()
                     if choice != "" and choice[0] == "N":
-                        logger.debug("API key encryption disabled.")
+                        logger.debug("API key encryption disabled")
                         userdata["Encrypted"] = False
                     else:
-                        logger.debug("API key encryption enabled.")
+                        logger.debug("API key encryption enabled")
                         userdata["Encrypted"] = True
 
                 if userdata["Encrypted"]:
@@ -540,19 +534,19 @@ def firstrun(userdata: dict):
                             p = input("Please input your password: ").strip()
                             assert re.match(regex_passwd, p)
                         except AssertionError:
-                            logger.debug("Invalid password provided, printing hint.")
-                            print(PASSWDREGMSG)
+                            logger.error("Invalid password provided")
+                            logger.info(PASSWDREGMSG)
                         else:
                             break
 
                 clrscr()
-                print("Information confirmation:\n")
+                logger.info("Information confirmation:\n")
                 printconf(userdata)
 
                 choice = input("All correct (Y/N)? [Y]: ").strip().upper()
                 if choice != "" and choice[0] == "N":
                     # TODO: May consider making this part more humane...
-                    logger.debug("User denied to proceed, restarting program.")
+                    logger.warning("User denied to proceed, restarting program.")
                     raise Restart()
                 else:
                     attempts = 0
@@ -566,19 +560,16 @@ def firstrun(userdata: dict):
                             logger.warning("Configure file will be generated as-is.")
                             break
 
-                        except (
-                        HTTPErrors.BadRequestError, HTTPErrors.UnauthorizedError, HTTPErrors.ForbiddenError):
+                        except (HTTPErrors.BadRequestError, HTTPErrors.UnauthorizedError, HTTPErrors.ForbiddenError):
                             logger.warning("Server API returned exceptional code.")
                             logger.warning("May be information mismatch.")
-                            print("Information provided may be incorrect.")
 
                             choice = input("Try to send request again or re-setup (T/R)? [T]: ").strip().upper()
                             if choice != "" and choice[0] == "R":
                                 # TODO: May consider making this part more humane...
                                 raise Restart()
 
-                        except (
-                                HTTPErrors.NotFoundError, HTTPErrors.MethodNotAllowedError,
+                        except (HTTPErrors.NotFoundError, HTTPErrors.MethodNotAllowedError,
                                 HTTPErrors.NotImplementedError, HTTPErrors.UnsupportedMediaTypeError):
                             logger.error("Invalid server API.")
                             logger.error(
@@ -669,7 +660,7 @@ def APIreq(req: str, userdata: dict = {}):
 
     # HTTP/GET request
     try:
-        logger.info("Sending request to server...")
+        logger.debug("Sending request to server...")
         req = urllib.request.Request(req, None, headers)
         response = urllib.request.urlopen(req)
     except urllib.error.HTTPError as e:
