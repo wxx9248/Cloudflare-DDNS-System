@@ -294,86 +294,73 @@ def main():
     while True:
         try:
             # Get current IP address
+            logger.info("Getting current IPv4 address")
             response = json.loads(APIreq(IP_API_ROOT).read().decode())
             if response and response["ip"]:
                 IPv4_address = response["ip"]
+                logger.info("IPv4 OK: {}".format(IPv4_address))
             else:
                 raise APIFailed(response)
 
             if userdata["IPv6"]:
+                logger.info("Getting current IPv6 address")
                 response = json.loads(APIreq(IP6_API_ROOT).read().decode())
                 if response and response["ip"]:
                     if response["ip"] != IPv4_address:
                         IPv6_address = response["ip"]
+                        logger.info("IPv6 OK: {}".format(IPv6_address))
                     else:
                         logger.warning("IPv6 network not detected")
                         userdata["IPv6"] = False
-                        logger.warning("IPv6 temporarily disabled.")
+                        logger.warning("IPv6 temporarily disabled")
                 else:
                     raise APIFailed(response)
 
+            logger.debug("switchbit: {}".format(switchbit))
+
+            # TODO: Detect whether targeted domain has A or AAAA record. If not, temporarily disable it.
             if switchbit:
-                # Detect whether DNS records exists
-                # and get IP address BTW
-                for domain in userdata["Domains"]:
-                    # A records
-                    # GET zones/:zone_identifier/dns_records
-                    response = json.loads(APIreq(
-                        "{}/zones/{}/dns_records?{}={}&{}={}".format(
-                            CF_API_ROOT, userdata["Zone-ID"],
-                            "name", domain,
-                            "type", "A"
-                        ), userdata = userdata).read().decode())
-
-                    if not response["success"]:
-                        logger.error("Cloudflare API failed")
-                        raise APIFailed(response)
-                    elif response["result"]:
-                        target_A_records[domain] = response["result"][0]["content"]
-
-                    # AAAA records
-                    if userdata["IPv6"]:
-                        response = json.loads(APIreq(
-                            "{}/zones/{}/dns_records?{}={}&{}={}".format(
-                                CF_API_ROOT, userdata["Zone-ID"],
-                                "name", domain,
-                                "type", "AAAA"
-                            ), userdata = userdata).read().decode())
-
-                        if not response["success"]:
-                            logger.error("Cloudflare API failed")
-                            raise APIFailed(response)
-                        elif response["result"]:
-                            target_AAAA_records[domain] = response["result"][0]["content"]
-                switchbit = False
+                target_iter_v4 = target_iter_v6 = userdata["Domains"]
             else:
-                # Only get IP address
-                # v4
-                for domain in target_A_records:
-                    response = json.loads(APIreq(
-                        "{}/zones/{}/dns_records?{}={}&{}={}".format(
-                            CF_API_ROOT, userdata["Zone-ID"],
-                            "name", domain,
-                            "type", "A"
-                        ), userdata = userdata).read().decode())
-                    if not response["success"]:
-                        logger.error("Cloudflare API failed")
-                        raise APIFailed(response)
-                    elif response["result"]:
-                        target_A_records[domain] = response["result"][0]["content"]
-                # v6
-                for domain in target_AAAA_records:
+                target_iter_v4 = target_A_records
+                target_iter_v6 = target_AAAA_records
+
+            for domain in target_iter_v4:
+                # A records
+                # GET zones/:zone_identifier/dns_records
+                logger.info("Getting IPv4 address of domain {} on record".format(domain))
+                response = json.loads(APIreq(
+                    "{}/zones/{}/dns_records?{}={}&{}={}".format(
+                        CF_API_ROOT, userdata["Zone-ID"],
+                        "name", domain,
+                        "type", "A"
+                    ), userdata = userdata).read().decode())
+
+                if not response["success"]:
+                    logger.error("Cloudflare API failed")
+                    raise APIFailed(response)
+                elif response["result"]:
+                    target_A_records[domain] = response["result"][0]["content"]
+                    logger.info("IPv4 of domain {}: {}".format(domain, target_A_records[domain]))
+
+            # AAAA records
+            if userdata["IPv6"]:
+                for domain in target_iter_v6:
+                    logger.info("Getting IPv6 address of domain {} on record".format(domain))
                     response = json.loads(APIreq(
                         "{}/zones/{}/dns_records?{}={}&{}={}".format(
                             CF_API_ROOT, userdata["Zone-ID"],
                             "name", domain,
                             "type", "AAAA"
                         ), userdata = userdata).read().decode())
+
                     if not response["success"]:
                         logger.error("Cloudflare API failed")
                         raise APIFailed(response)
                     elif response["result"]:
                         target_AAAA_records[domain] = response["result"][0]["content"]
+                        logger.info("IPv6 of domain {}: {}".format(domain, target_AAAA_records[domain]))
+            switchbit = False
 
             # Assessment
             # Change records if different
