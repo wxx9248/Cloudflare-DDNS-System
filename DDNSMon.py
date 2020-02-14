@@ -135,7 +135,7 @@ class ConfFileDamaged(Exception):
             raise Exception("RU kiddin' me?")
 
 
-regex_Domain = re.compile(r"^((\w+)\.(\w+)){3,255}$")
+regex_Domain = re.compile(r"^(?=^.{3,255}$)[a-zA-Z0-9][-a-zA-Z0-9]{0,62}(\.[a-zA-Z0-9][-a-zA-Z0-9]{0,62})+$")
 regex_Email = re.compile(r"^([\w.]+)@(\w+)\.(\w+)$")
 regex_hextoken = re.compile(r"^([a-f0-9]{32})$")
 regex_b64token = re.compile(r"^([A-Za-z0-9\-.~+/_]+)(=*)$")
@@ -207,7 +207,7 @@ def main():
         assert re.match(regex_ZoneID, tmpdata["Zone-ID"])
         logger.debug("Zone-ID: pass")
 
-        for item in tmpdata["Domain"]:
+        for item in tmpdata["Domains"]:
             assert re.match(regex_Domain, item)
         logger.debug("Domains: pass")
 
@@ -294,14 +294,14 @@ def main():
     while True:
         try:
             # Get current IP address
-            response = json.load(APIreq(IP_API_ROOT).read())
+            response = json.loads(APIreq(IP_API_ROOT).read().decode())
             if response and response["ip"]:
                 IPv4_address = response["ip"]
             else:
                 raise APIFailed(response)
 
             if userdata["IPv6"]:
-                response = json.load(APIreq(IP6_API_ROOT).read())
+                response = json.loads(APIreq(IP6_API_ROOT).read().decode())
                 if response and response["ip"]:
                     if response["ip"] != IPv4_address:
                         IPv6_address = response["ip"]
@@ -318,12 +318,12 @@ def main():
                 for domain in userdata["Domains"]:
                     # A records
                     # GET zones/:zone_identifier/dns_records
-                    response = json.load(APIreq(
+                    response = json.loads(APIreq(
                         "{}/zones/{}/dns_records?{}={}&{}={}".format(
                             CF_API_ROOT, userdata["Zone-ID"],
                             "name", domain,
                             "type", "A"
-                        ), userdata = userdata).read())
+                        ), userdata = userdata).read().decode())
 
                     if not response["success"]:
                         logger.error("Cloudflare API failed")
@@ -333,12 +333,12 @@ def main():
 
                     # AAAA records
                     if userdata["IPv6"]:
-                        response = json.load(APIreq(
+                        response = json.loads(APIreq(
                             "{}/zones/{}/dns_records?{}={}&{}={}".format(
                                 CF_API_ROOT, userdata["Zone-ID"],
                                 "name", domain,
                                 "type", "AAAA"
-                            ), userdata = userdata).read())
+                            ), userdata = userdata).read().decode())
 
                         if not response["success"]:
                             logger.error("Cloudflare API failed")
@@ -350,12 +350,12 @@ def main():
                 # Only get IP address
                 # v4
                 for domain in target_A_records:
-                    response = json.load(APIreq(
+                    response = json.loads(APIreq(
                         "{}/zones/{}/dns_records?{}={}&{}={}".format(
                             CF_API_ROOT, userdata["Zone-ID"],
                             "name", domain,
                             "type", "A"
-                        ), userdata = userdata).read())
+                        ), userdata = userdata).read().decode())
                     if not response["success"]:
                         logger.error("Cloudflare API failed")
                         raise APIFailed(response)
@@ -363,12 +363,12 @@ def main():
                         target_A_records[domain] = response["result"][0]["content"]
                 # v6
                 for domain in target_AAAA_records:
-                    response = json.load(APIreq(
+                    response = json.loads(APIreq(
                         "{}/zones/{}/dns_records?{}={}&{}={}".format(
                             CF_API_ROOT, userdata["Zone-ID"],
                             "name", domain,
                             "type", "AAAA"
-                        ), userdata = userdata).read())
+                        ), userdata = userdata).read().decode())
                     if not response["success"]:
                         logger.error("Cloudflare API failed")
                         raise APIFailed(response)
@@ -387,6 +387,7 @@ def main():
                     pass
 
             # Sleep
+            logger.info("Sleep for %d:%02d:%02d" % (SLEEPSEC // 3600, SLEEPSEC // 60 % 60, SLEEPSEC % 60))
             time.sleep(SLEEPSEC)
 
         except urllib.error.URLError:
@@ -622,6 +623,11 @@ def firstrun(userdata: dict):
         except Exception:
             logger.error(UNKNOWNEXMSG)
             raise
+        except BaseException:
+            os.remove(CONFPATH)
+            raise
+        else:
+            break
 
 
 def encrypt(string: str, passwd: str):
@@ -747,7 +753,7 @@ if __name__ == "__main__":
             print()
             _logger.error("==============================")
             _logger.error("Program was terminated due to:\n")
-            _logger.error(re.search(r"<class '(.+)'>", str(_e.__class__)).group(1) + ": " + str(_e) + "\n")
+            _logger.error(re.search(r"<class '(.+)'>", str(_e.__class__)).group(1) + "\n")
             _logger.error("==============================")
             break
         else:
