@@ -136,7 +136,7 @@ class ConfFileDamaged(Exception):
             raise Exception("RU kiddin' me?")
 
 
-regex_Domain = re.compile(r"^(\w+)\.(\w+){3,255}$")
+regex_Domain = re.compile(r"^((\w+)\.(\w+)){3,255}$")
 regex_Email = re.compile(r"^([\w\.]+)@(\w+)\.(\w+)$")
 regex_hextoken = re.compile(r"^([a-f0-9]{32})$")
 regex_b64token = re.compile(r"^([A-Za-z0-9\-\.\~\+/_]+)(=*)$")
