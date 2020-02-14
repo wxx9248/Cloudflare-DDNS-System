@@ -136,9 +136,9 @@ class ConfFileDamaged(Exception):
 
 
 regex_Domain = re.compile(r"^((\w+)\.(\w+)){3,255}$")
-regex_Email = re.compile(r"^([\w\.]+)@(\w+)\.(\w+)$")
+regex_Email = re.compile(r"^([\w.]+)@(\w+)\.(\w+)$")
 regex_hextoken = re.compile(r"^([a-f0-9]{32})$")
-regex_b64token = re.compile(r"^([A-Za-z0-9\-\.\~\+/_]+)(=*)$")
+regex_b64token = re.compile(r"^([A-Za-z0-9\-.~+/_]+)(=*)$")
 regex_ZoneID = regex_hextoken
 regex_GAPIKey = regex_hextoken
 regex_DAPIToken = regex_b64token
@@ -148,15 +148,15 @@ regex_passwd = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[~!@&%#_])[a-
 def main():
     # Initialization
     userdata = {
-        "Zone-ID"      : "",
-        "Domains"      : [],
-        "GlobalAPIMode": False,
-        "E-mail"       : "undefined",
-        "APIKey"       : "",
-        "IPv6"         : False,
-        "Encrypted"    : False,
-        "EncryptTag"   : "undefined",
-        "OneTimeVal"   : "undefined"
+        "Zone-ID":          "",
+        "Domains":          [],
+        "GlobalAPIMode":    False,
+        "E-mail":           "undefined",
+        "APIKey":           "",
+        "IPv6":             False,
+        "Encrypted":        False,
+        "EncryptTag":       "undefined",
+        "OneTimeVal":       "undefined"
     }
     logger = logging.getLogger(__name__)
 
@@ -642,7 +642,7 @@ def decrypt(bcipher: bytes, passwd: str, btag: bytes, bnonce: bytes):
     return string
 
 
-def APIreq(req: str, userdata: dict = {}):
+def APIreq(req: str, userdata = None):
     logger = logging.getLogger(__name__)
     logger.debug("Logger initialized.")
 
@@ -677,7 +677,8 @@ def APIreq(req: str, userdata: dict = {}):
             else:
                 raise
     except urllib.error.URLError as e:
-        logger.error("Request failed. Please check Internet connection.")
+        logger.error("Request failed. Please check Internet connection. Reason:")
+        logger.error(e)
         raise
     except Exception:
         logger.error(UNKNOWNEXMSG)
@@ -693,6 +694,8 @@ def printconf(userdata: dict):
 
 def modifyconf(userdata: dict):
     # TODO: Provide user a chance to modify the configuration rather than re-configure.
+    logger = logging.getLogger(__name__)
+    logger.debug("Logger initialized.")
 
     with open(CONFPATH, "w") as conffile:
         try:
@@ -708,44 +711,44 @@ def modifyconf(userdata: dict):
 if __name__ == "__main__":
     logging.basicConfig(level = logging.DEBUG,
                         format = "[%(asctime)s] %(name)s: %(funcName)s(): [%(levelname)s] %(message)s")
-    logger = logging.getLogger(__name__)
-    logger.debug("Logger initialized.")
+    _logger = logging.getLogger(__name__)
+    _logger.debug("Logger initialized.")
 
     while True:
         try:
             main()
         except Restart:
-            logger.info("Restarting into program entry point...")
-        except MException as e:
+            _logger.info("Restarting into program entry point...")
+        except MException as _e:
             print()
-            logger.error("*********************************")
-            logger.error("An fatal exception has occurred:")
-            for line in traceback.format_exc().splitlines():
-                logger.error(line)
-            logger.error("")
-            logger.error("Additional information:")
-            for line in e.errormsg().splitlines():
-                logger.error(line)
-            logger.error("")
-            logger.error("Program exits abnormally.")
-            logger.error("*********************************")
-        except Exception as e:
+            _logger.error("*********************************")
+            _logger.error("An fatal exception has occurred:")
+            for _line in traceback.format_exc().splitlines():
+                _logger.error(_line)
+            _logger.error("")
+            _logger.error("Additional information:")
+            for _line in _e.errormsg().splitlines():
+                _logger.error(_line)
+            _logger.error("")
+            _logger.error("Program exits abnormally.")
+            _logger.error("*********************************")
+        except Exception as _e:
             print()
-            logger.error("*********************************")
-            logger.error("An fatal exception has occurred:")
-            for line in traceback.format_exc().splitlines():
-                logger.error(line)
-            # logger.error(re.search(r"<class '(.+)'>", str(e.__class__)).group(1) + ": " + str(e) + "\n")
-            logger.error("")
-            logger.error("Program exits abnormally.")
-            logger.error("*********************************")
+            _logger.error("*********************************")
+            _logger.error("An fatal exception has occurred:")
+            for _line in traceback.format_exc().splitlines():
+                _logger.error(_line)
+            # _logger.error(re.search(r"<class '(.+)'>", str(_e.__class__)).group(1) + ": " + str(_e) + "\n")
+            _logger.error("")
+            _logger.error("Program exits abnormally.")
+            _logger.error("*********************************")
             break
-        except BaseException as e:
+        except BaseException as _e:
             print()
-            logger.error("==============================")
-            logger.error("Program was terminated due to:\n")
-            logger.error(re.search(r"<class '(.+)'>", str(e.__class__)).group(1) + ": " + str(e) + "\n")
-            logger.error("==============================")
+            _logger.error("==============================")
+            _logger.error("Program was terminated due to:\n")
+            _logger.error(re.search(r"<class '(.+)'>", str(_e.__class__)).group(1) + ": " + str(_e) + "\n")
+            _logger.error("==============================")
             break
         else:
             break
