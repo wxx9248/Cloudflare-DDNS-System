@@ -35,6 +35,7 @@ import time
 import traceback
 import urllib.error
 import urllib.request
+import urllib.parse
 
 try:
     import HTTPErrors
@@ -267,6 +268,7 @@ def main():
                 else:
                     assert re.match(regex_DAPIToken, userdata["APIKey"])
                 logger.debug("APIKey 2nd check: pass")
+                del p
             except ValueError:
                 if attempts < PASSWDATT_UPB:
                     logger.error("Attempt {} of {} :".format(attempts, PASSWDATT_UPB))
@@ -286,6 +288,7 @@ def main():
     else:
         logger.info("Encryption flag not detected, leaving as-is.")
 
+    IPv6_address = None
     target_A_records = {}
     target_AAAA_records = {}
 
@@ -318,7 +321,6 @@ def main():
 
             logger.debug("switchbit: {}".format(switchbit))
 
-            # TODO: Detect whether targeted domain has A or AAAA record. If not, temporarily disable it.
             if switchbit:
                 target_iter_v4 = target_iter_v6 = userdata["Domains"]
             else:
@@ -340,8 +342,15 @@ def main():
                     logger.error("Cloudflare API failed")
                     raise APIFailed(response)
                 elif response["result"]:
-                    target_A_records[domain] = response["result"][0]["content"]
-                    logger.info("IPv4 of domain {}: {}".format(domain, target_A_records[domain]))
+                    target_A_records[domain] = {
+                        "id": response["result"][0]["id"],
+                        "content": response["result"][0]["content"]
+                    }
+                    logger.info("Identifier of domain {}: {}".format(domain, target_A_records[domain]["id"]))
+                    logger.info("IPv4 of domain {}: {}".format(domain, target_A_records[domain]["content"]))
+                else:
+                    logger.warning("A record of domain {}: Not Found".format(domain))
+                    logger.warning("Temporarily disabled DDNSv4 service for this domain")
 
             # AAAA records
             if userdata["IPv6"]:
@@ -358,41 +367,97 @@ def main():
                         logger.error("Cloudflare API failed")
                         raise APIFailed(response)
                     elif response["result"]:
-                        target_AAAA_records[domain] = response["result"][0]["content"]
-                        logger.info("IPv6 of domain {}: {}".format(domain, target_AAAA_records[domain]))
+                        target_AAAA_records[domain] = {
+                            "id": response["result"][0]["id"],
+                            "content":  response["result"][0]["content"]
+                        }
+                        logger.info("Identifier of domain {}: {}".format(domain, target_AAAA_records[domain]["id"]))
+                        logger.info("IPv6 of domain {}: {}".format(domain, target_AAAA_records[domain]["content"]))
+                    else:
+                        logger.warning("AAAA record of domain {}: Not Found".format(domain))
+                        logger.warning("Temporarily disabled DDNSv6 service for this domain")
+
             switchbit = False
 
             # Assessment
             # Change records if different
             # v4
             for domain in target_A_records:
-                pass
+                if target_A_records[domain]["content"] != IPv4_address:
+                    response = json.load(APIreq(
+                        "{}/zones/{}/dns_records/{}".format(
+                            CF_API_ROOT, userdata["Zone-ID"], target_A_records[domain]["id"]
+                        )
+                    ), userdata = userdata, method = "PUT", data = json.dumps(
+                        {
+                            "name":    domain,
+                            "type":    "A",
+                            "content": IPv4_address
+                        })
+                    )
+                    try:
+                        assert response
+                        assert response["success"]
+                        assert response["result"][0]["id"] == target_A_records[domain]["id"]
+                        assert response["result"][0]["type"] == "A"
+                        assert response["result"][0]["name"] == domain
+                        assert response["result"][0]["content"] == IPv4_address
+                    except AssertionError:
+                        logger.error("Cloudflare API failed")
+                        raise APIFailed(response)
+                else:
+                    logger.info("IPv4 for domain {} matches current IPv4 {}".format(domain, IPv4_address))
+                    logger.info("No need to change.")
+                logger.info("Proceeding to next step")
 
             # v6
             if userdata["IPv6"]:
                 for domain in target_AAAA_records:
-                    pass
+                    if target_AAAA_records[domain]["content"] != IPv6_address:
+                        response = json.load(APIreq(
+                            "{}/zones/{}/dns_records/{}".format(
+                                CF_API_ROOT, userdata["Zone-ID"], target_AAAA_records[domain]["id"]
+                            )
+                        ), userdata = userdata, method = "PUT", data = json.dumps(
+                            {
+                                "name": domain,
+                                "type": "AAAA",
+                                "content": IPv6_address
+                            }).encode()
+                        )
+                        try:
+                            assert response
+                            assert response["success"]
+                            assert response["result"][0]["id"] == target_AAAA_records[domain]["id"]
+                            assert response["result"][0]["type"] == "AAAA"
+                            assert response["result"][0]["name"] == domain
+                            assert response["result"][0]["content"] == IPv6_address
+                        except AssertionError:
+                            logger.error("Cloudflare API failed")
+                            raise APIFailed(response)
+                    else:
+                        logger.info("IPv6 for domain {} matches current IPv6 {}".format(domain, IPv4_address))
+                        logger.info("No need to change.")
+                    logger.info("Proceeding to next step")
 
             # Sleep
             logger.info("Sleep for %d:%02d:%02d" % (SLEEPSEC // 3600, SLEEPSEC // 60 % 60, SLEEPSEC % 60))
             time.sleep(SLEEPSEC)
 
-        except urllib.error.URLError:
-            logger.error("Internet unavailable. Will try again later.")
         except (
                 HTTPErrors.RequestTimeOutError, HTTPErrors.ServiceUnavailableError,
                 HTTPErrors.GatewayTimeOutError, HTTPErrors.TooManyRequestsError) as e:
-            logger.error("Request failed, reason:", e, "Will try again later.")
+            logger.error("Request failed, reason: " + str(e) + ". Will try again later.")
         except HTTPErrors.InternalServerError as e:
             if attempts < NETFAILATT_UPB:
-                logger.error("Request failed, reason:", e, "Will try another", attempts, "time(s).")
+                logger.error("Request failed, reason: " + str(e) + ". Will try another " + str(attempts) + " time(s).")
                 attempts += 1
             else:
-                logger.error("Request failed, reason:", e)
-                logger.error("API might be changed. Please send this log to", __email__)
+                logger.error("Request failed, reason: " + str(e))
+                logger.error("API might be changed. Please send this log to " + __email__)
                 raise
         except (HTTPErrors.UnauthorizedError, HTTPErrors.ForbiddenError) as e:
-            logger.error("Request failed, reason:", e)
+            logger.error("Request failed, reason: " + str(e))
             logger.error("Your credentials may be incorrect.")
             while True:
                 choice = input("Try again or reconfigure (T/R)? [T]: ").strip().upper()
@@ -401,9 +466,11 @@ def main():
                 else:
                     break
         except (HTTPErrors.ClientError, HTTPErrors.ServerError) as e:
-            logger.error("Request failed, reason:", e)
-            logger.error("API might be changed. Please send this log to", __email__)
+            logger.error("Request failed, reason: " + str(e))
+            logger.error("API might be changed. Please send this log to " + __email__)
             raise
+        except urllib.error.URLError:
+            logger.error("Internet unavailable. Will try again later.")
         except json.JSONDecodeError as e:
             logger.error("JSON decode failed.")
             raise JSONFailed(e)
@@ -590,10 +657,10 @@ def firstrun(userdata: dict):
                     # Encrypt API key
                     if userdata["Encrypted"]:
                         bcipher, btag, bnonce = encrypt(userdata["APIKey"], p)
+                        del p
                         userdata["APIKey"] = base64.b64encode(bcipher).decode("utf-8")
                         userdata["EncryptTag"] = base64.b64encode(btag).decode("utf-8")
                         userdata["OneTimeVal"] = base64.b64encode(bnonce).decode("utf-8")
-                        p = ""
                     # Write configure to JSON file
                     try:
                         json.dump(userdata, conffile, indent = 4)
@@ -635,7 +702,7 @@ def decrypt(bcipher: bytes, passwd: str, btag: bytes, bnonce: bytes):
     return string
 
 
-def APIreq(req: str, userdata = None):
+def APIreq(req: str, userdata = None, method: str = "GET", data: bytes = b""):
     logger = logging.getLogger(__name__)
     logger.debug("Logger initialized.")
 
@@ -654,7 +721,7 @@ def APIreq(req: str, userdata = None):
     # HTTP/GET request
     try:
         logger.debug("Sending request to server...")
-        req = urllib.request.Request(req, None, headers)
+        req = urllib.request.Request(req, data, headers, method = method)
         response = urllib.request.urlopen(req)
     except urllib.error.HTTPError as e:
         logger.error(e)
@@ -702,7 +769,7 @@ def modifyconf(userdata: dict):
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level = logging.DEBUG,
+    logging.basicConfig(level = logging.INFO,
                         format = "[%(asctime)s] %(name)s: %(funcName)s(): [%(levelname)s] %(message)s")
     _logger = logging.getLogger(__name__)
     _logger.debug("Logger initialized.")
