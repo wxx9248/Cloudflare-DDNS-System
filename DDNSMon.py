@@ -149,15 +149,15 @@ regex_passwd = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[~!@&%#_])[a-
 def main():
     # Initialization
     userdata = {
-        "Zone-ID":          "",
-        "Domains":          [],
-        "GlobalAPIMode":    False,
-        "E-mail":           "undefined",
-        "APIKey":           "",
-        "IPv6":             False,
-        "Encrypted":        False,
-        "EncryptTag":       "undefined",
-        "OneTimeVal":       "undefined"
+        "Zone-ID":       "",
+        "Domains":       [],
+        "GlobalAPIMode": False,
+        "E-mail":        "undefined",
+        "APIKey":        "",
+        "IPv6":          False,
+        "Encrypted":     False,
+        "EncryptTag":    "undefined",
+        "OneTimeVal":    "undefined"
     }
     logger = logging.getLogger(__name__)
 
@@ -201,7 +201,7 @@ def main():
                     assert isinstance(item, str)
                     assert item
             else:
-                assert tmpdata[i] is not None
+                assert tmpdata[i]
 
         logger.debug("Stage 2: Regex-matching check.")
 
@@ -213,7 +213,7 @@ def main():
         logger.debug("Domains: pass")
 
         if tmpdata["GlobalAPIMode"]:
-            assert tmpdata["Encrypted"] is not None
+            assert tmpdata["Encrypted"]
             logger.debug("Encrypted: pass")
             assert re.match(regex_Email, tmpdata["E-mail"])
             logger.debug("E-mail: pass")
@@ -343,7 +343,7 @@ def main():
                     raise APIFailed(response)
                 elif response["result"]:
                     target_A_records[domain] = {
-                        "id": response["result"][0]["id"],
+                        "id":      response["result"][0]["id"],
                         "content": response["result"][0]["content"]
                     }
                     logger.info("Identifier of domain {}: {}".format(domain, target_A_records[domain]["id"]))
@@ -368,8 +368,8 @@ def main():
                         raise APIFailed(response)
                     elif response["result"]:
                         target_AAAA_records[domain] = {
-                            "id": response["result"][0]["id"],
-                            "content":  response["result"][0]["content"]
+                            "id":      response["result"][0]["id"],
+                            "content": response["result"][0]["content"]
                         }
                         logger.info("Identifier of domain {}: {}".format(domain, target_AAAA_records[domain]["id"]))
                         logger.info("IPv6 of domain {}: {}".format(domain, target_AAAA_records[domain]["content"]))
@@ -387,14 +387,13 @@ def main():
                     response = json.loads(APIreq(
                         "{}/zones/{}/dns_records/{}".format(
                             CF_API_ROOT, userdata["Zone-ID"], target_A_records[domain]["id"]
+                        ), userdata = userdata, method = "PUT", data = json.dumps(
+                            {
+                                "name":    domain,
+                                "type":    "A",
+                                "content": IPv4_address
+                            }).encode()).read().decode()
                         )
-                        , userdata = userdata, method = "PUT", data = json.dumps(
-                        {
-                            "name":    domain,
-                            "type":    "A",
-                            "content": IPv4_address
-                        }).encode()).read().decode()
-                    )
                     try:
                         assert response
                         assert response["success"]
@@ -418,8 +417,7 @@ def main():
                         response = json.loads(APIreq(
                             "{}/zones/{}/dns_records/{}".format(
                                 CF_API_ROOT, userdata["Zone-ID"], target_AAAA_records[domain]["id"]
-                            )
-                            , userdata = userdata, method = "PUT", data = json.dumps(
+                            ), userdata = userdata, method = "PUT", data = json.dumps(
                                 {
                                     "name":    domain,
                                     "type":    "AAAA",
