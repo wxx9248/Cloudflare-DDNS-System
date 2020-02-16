@@ -384,27 +384,28 @@ def main():
             # v4
             for domain in target_A_records:
                 if target_A_records[domain]["content"] != IPv4_address:
-                    response = json.load(APIreq(
+                    response = json.loads(APIreq(
                         "{}/zones/{}/dns_records/{}".format(
                             CF_API_ROOT, userdata["Zone-ID"], target_A_records[domain]["id"]
                         )
-                    ), userdata = userdata, method = "PUT", data = json.dumps(
+                        , userdata = userdata, method = "PUT", data = json.dumps(
                         {
                             "name":    domain,
                             "type":    "A",
                             "content": IPv4_address
-                        })
+                        }).encode()).read().decode()
                     )
                     try:
                         assert response
                         assert response["success"]
-                        assert response["result"][0]["id"] == target_A_records[domain]["id"]
-                        assert response["result"][0]["type"] == "A"
-                        assert response["result"][0]["name"] == domain
-                        assert response["result"][0]["content"] == IPv4_address
+                        assert response["result"]["id"] == target_A_records[domain]["id"]
+                        assert response["result"]["type"] == "A"
+                        assert response["result"]["name"] == domain
+                        assert response["result"]["content"] == IPv4_address
                     except AssertionError:
                         logger.error("Cloudflare API failed")
                         raise APIFailed(response)
+                    logger.info("IPv4 for domain {} changed to {}".format(domain, IPv4_address))
                 else:
                     logger.info("IPv4 for domain {} matches current IPv4 {}".format(domain, IPv4_address))
                     logger.info("No need to change.")
@@ -414,29 +415,30 @@ def main():
             if userdata["IPv6"]:
                 for domain in target_AAAA_records:
                     if target_AAAA_records[domain]["content"] != IPv6_address:
-                        response = json.load(APIreq(
+                        response = json.loads(APIreq(
                             "{}/zones/{}/dns_records/{}".format(
                                 CF_API_ROOT, userdata["Zone-ID"], target_AAAA_records[domain]["id"]
                             )
-                        ), userdata = userdata, method = "PUT", data = json.dumps(
-                            {
-                                "name": domain,
-                                "type": "AAAA",
-                                "content": IPv6_address
-                            }).encode()
+                            , userdata = userdata, method = "PUT", data = json.dumps(
+                                {
+                                    "name":    domain,
+                                    "type":    "AAAA",
+                                    "content": IPv6_address
+                                }).encode()).read().decode()
                         )
                         try:
                             assert response
                             assert response["success"]
-                            assert response["result"][0]["id"] == target_AAAA_records[domain]["id"]
-                            assert response["result"][0]["type"] == "AAAA"
-                            assert response["result"][0]["name"] == domain
-                            assert response["result"][0]["content"] == IPv6_address
+                            assert response["result"]["id"] == target_AAAA_records[domain]["id"]
+                            assert response["result"]["type"] == "AAAA"
+                            assert response["result"]["name"] == domain
+                            assert response["result"]["content"] == IPv6_address
                         except AssertionError:
                             logger.error("Cloudflare API failed")
                             raise APIFailed(response)
+                        logger.info("IPv6 for domain {} changed to {}".format(domain, IPv6_address))
                     else:
-                        logger.info("IPv6 for domain {} matches current IPv6 {}".format(domain, IPv4_address))
+                        logger.info("IPv6 for domain {} matches current IPv6 {}".format(domain, IPv6_address))
                         logger.info("No need to change.")
                     logger.info("Proceeding to next step")
 
