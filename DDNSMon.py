@@ -18,7 +18,7 @@ __version__ = r"v2.0"
 __maintainer__ = [__author__]
 __credits__ = [__author__]
 __email__ = r"wxx9248@qq.com"
-__status__ = r"Development"
+__status__ = r"Release"
 
 import abc
 import base64
@@ -201,7 +201,7 @@ def main():
                     assert isinstance(item, str)
                     assert item
             else:
-                assert tmpdata[i]
+                assert tmpdata[i] is not None
 
         logger.debug("Stage 2: Regex-matching check.")
 
@@ -213,7 +213,7 @@ def main():
         logger.debug("Domains: pass")
 
         if tmpdata["GlobalAPIMode"]:
-            assert tmpdata["Encrypted"]
+            assert tmpdata["Encrypted"] is not None
             logger.debug("Encrypted: pass")
             assert re.match(regex_Email, tmpdata["E-mail"])
             logger.debug("E-mail: pass")
@@ -393,7 +393,7 @@ def main():
                                 "type":    "A",
                                 "content": IPv4_address
                             }).encode()).read().decode()
-                        )
+                                          )
                     try:
                         assert response
                         assert response["success"]
@@ -423,7 +423,7 @@ def main():
                                     "type":    "AAAA",
                                     "content": IPv6_address
                                 }).encode()).read().decode()
-                        )
+                                              )
                         try:
                             assert response
                             assert response["success"]
@@ -480,22 +480,19 @@ def main():
 
 
 def clrscr():
-    dllname = "clrscr.dll"
     logger = logging.getLogger(__name__)
     logger.debug("Logger initialized.")
 
     try:
-        dll = ctypes.CDLL(dllname)
-        logger.debug("DLL attached.")
+        if "win32" in sys.platform:
+            os.system("CLS")
+        else:
+            os.system("clear")
     except OSError:
-        logger.warning("Can't load " + dllname)
-        logger.warning("Invoking command line...")
-        os.system("cls")
+        logger.warning("Cannot invoke system call")
     except Exception:
         logger.error(UNKNOWNEXMSG)
         raise
-    else:
-        dll.clrscr()
 
 
 def firstrun(userdata: dict):
@@ -600,7 +597,6 @@ def firstrun(userdata: dict):
 
                 choice = input("All correct (Y/N)? [Y]: ").strip().upper()
                 if choice != "" and choice[0] == "N":
-                    # TODO: May consider making this part more humane...
                     logger.warning("User denied to proceed, restarting program.")
                     raise Restart()
                 else:
@@ -621,7 +617,6 @@ def firstrun(userdata: dict):
 
                             choice = input("Try to send request again or re-setup (T/R)? [T]: ").strip().upper()
                             if choice != "" and choice[0] == "R":
-                                # TODO: May consider making this part more humane...
                                 raise Restart()
 
                         except (HTTPErrors.NotFoundError, HTTPErrors.MethodNotAllowedError,
@@ -750,22 +745,6 @@ def APIreq(req: str, userdata = None, method: str = "GET", data: bytes = b""):
 def printconf(userdata: dict):
     for i in ["{}: {}".format(k, userdata[k]) for k in userdata.keys()]:
         print(i)
-
-
-def modifyconf(userdata: dict):
-    # TODO: Provide user a chance to modify the configuration rather than re-configure.
-    logger = logging.getLogger(__name__)
-    logger.debug("Logger initialized.")
-
-    with open(CONFPATH, "w") as conffile:
-        try:
-            json.dump(userdata, conffile, indent = 4)
-        except OSError:
-            logger.error("Can't generate configuration file, referring to information below.")
-            raise
-        except Exception:
-            logger.error(UNKNOWNEXMSG)
-            raise
 
 
 if __name__ == "__main__":
