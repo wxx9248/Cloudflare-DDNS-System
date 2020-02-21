@@ -14,7 +14,7 @@ r"""
 __author__ = r"wxx9248"
 __copyright__ = r"Copyright 2020 © wxx9248"
 __license__ = r"GPL v3"
-__version__ = r"v2.0"
+__version__ = r"v2.0.1"
 __maintainer__ = [__author__]
 __credits__ = [__author__]
 __email__ = r"wxx9248@qq.com"
@@ -771,6 +771,7 @@ if __name__ == "__main__":
             _logger.error("")
             _logger.error("Program exits abnormally.")
             _logger.error("*********************************")
+            break
         except Exception as _e:
             print()
             _logger.error("*********************************")
